@@ -93,19 +93,19 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 |---|---|---:|
 | Section 2, Table 1 and Appendix B (audit of 23 data sets) | `scripts/audit.py --out results/audit` | — |
 | Section 5.1, Table 3 and S2 (re-scoring saved mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_saved.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
-| Section 5.2, Supplementary Table S1 and S2 (re-scoring intensity-based models; see "Reproduction scope") | `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` (EasyTPP runs) | — |
-| Section 5.3, Table 4 and Supplementary Table S2; Section 6.2, Table 5; S2 (mixture head) | `rank_change` | 1,440 |
+| Section 5.2, Supplementary Table S2 and S2 (re-scoring intensity-based models; see "Reproduction scope") | `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` (EasyTPP runs) | — |
+| Section 5.3, Table 4 and Supplementary Table S3; Section 6.2, Supplementary Table S1; S2 (mixture head) | `rank_change` | 1,440 |
 | Sections 5.3, 6.2 and S2 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
 | Section 6.1, S1 and S2 (synthetic data) | `synthetic` | 5,040 |
 | Section 6.1 and S3 (coarsened real data) | `coarsened_real`, then `scripts/score_latent.py runs/coarsened_real` before the report | 1,440 |
-| Section 6.2, Table 5; S1 and S2 (RMTPP, THP) | `intensity_heads` | 600 |
-| Sections 5.3 and 6.2, Table 5; S2 (process logs) | `process_logs` | 840 |
+| Section 6.2, Supplementary Table S1; S1 and S2 (RMTPP, THP) | `intensity_heads` | 600 |
+| Sections 5.3 and 6.2, Supplementary Table S1; S2 (process logs) | `process_logs` | 840 |
 | Section 6.2 and S3 (multi-sample jitter) | `iw_jitter` | 1,380 |
 | Section 7 and S3 (self-correcting process at Δ = 1) | `iw_jitter_large`; `scripts/inbin_diagnostic.py true_law` and `models --run runs/synthetic --cells '*synth_SC_r*_d1p0*'` | 240 |
 | Section 6.2 and S3 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
 | Section 7 and S3 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
 | Section 7 and S3 (marks) | `marks` | 420 |
-| S3 and Supplementary Table S3 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
+| S3 and Supplementary Table S4 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
 
 Statistics: within a unit (data set, encoder, head, treatment) the learning rate is chosen by the dev mean over seeds
 of the selection criterion, differences are paired by seed (synthetic data: averaged within each realization), and
@@ -130,7 +130,7 @@ evaluate saved models that are not distributed with this repository:
   floor 10⁻⁶); it approximates the saved models of the paper but is not identical to them (their number and the
   training code differ), so its scores are expected to be close to, not equal to, Table 3. The StackOverflow subsample
   is not reconstructible (see `data/README.md`).
-- **Section 5.2, Supplementary Table S1 (intensity-based models).** The EasyTPP checkpoints are not distributed. The
+- **Section 5.2, Supplementary Table S2 (intensity-based models).** The EasyTPP checkpoints are not distributed. The
   models were trained with the EasyTPP implementation of RMTPP, NHP, SAHP and AttNHP with these settings: hidden
   size 64, 100 epochs, learning rate 10⁻³, batch size 32, seed 42, 10 Monte Carlo samples per interval for the
   compensator, with a time-only objective (the log-likelihood of the event times without the mark term, i.e.
