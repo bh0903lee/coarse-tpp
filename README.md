@@ -101,11 +101,11 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Section 6.2, Supplementary Table S1; S1 and S2 (RMTPP, THP) | `intensity_heads` | 600 |
 | Sections 5.3 and 6.2, Supplementary Table S1; S2 (process logs) | `process_logs` | 840 |
 | Section 6.2 and S3 (multi-sample jitter) | `iw_jitter` | 1,380 |
-| Section 7 and S3 (self-correcting process at Δ = 1) | `iw_jitter_large`; `scripts/inbin_diagnostic.py true_law` and `models --run runs/synthetic --cells '*synth_SC_r*_d1p0*'` | 240 |
-| Section 6.2 and S3 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
-| Section 7 and S3 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
-| Section 7 and S3 (marks) | `marks` | 420 |
-| S3 and Supplementary Table S4 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
+| Section 8 and S3 (self-correcting process at Δ = 1) | `iw_jitter_large`; `scripts/inbin_diagnostic.py true_law` and `models --run runs/synthetic --cells '*synth_SC_r*_d1p0*'` | 240 |
+| Section 8 and S3 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
+| Section 8 and S3 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
+| Section 8 and S3 (marks) | `marks` | 420 |
+| Section 5.3, S3 and Supplementary Table S4 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
 
 Statistics: within a unit (data set, encoder, head, treatment) the learning rate is chosen by the dev mean over seeds
 of the selection criterion, differences are paired by seed (synthetic data: averaged within each realization), and
@@ -119,7 +119,7 @@ floor scores of very narrow mixture components can move by up to about 1e-4).
 
 ## Reproduction scope
 
-The audit (Section 2) and the training experiments (Sections 5.3, 6 and 7 and the Supplementary Material) are run by
+The audit (Section 2) and the training experiments (Sections 5.3, 6 and 8 and the Supplementary Material) are run by
 the commands above from the data listed in `data/README.md`. The two re-scoring analyses of Sections 5.1 and 5.2
 evaluate saved models that are not distributed with this repository:
 
