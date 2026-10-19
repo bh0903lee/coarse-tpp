@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article below. Authors and publication details are given in the article; the full reference will be added upon publication."
+title: "coarse-tpp"
+type: software
+authors:
+  - name: "The authors of the article (see the article)"
+license: MIT
+version: "1.0.0"
+preferred-citation:
+  type: article
+  title: "Ties, Time Grids and the Likelihood: Evaluating Neural Temporal Point Processes on Coarsely Recorded Data"
+  authors:
+    - name: "The authors of the article (see the article)"

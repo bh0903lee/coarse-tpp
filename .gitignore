@@ -1,0 +1,20 @@
+# data, results and checkpoints are never committed, except the four simulated data sets in data/synthetic_extra
+data/*
+!data/README.md
+!data/synthetic_extra/
+runs/
+results/
+*.pt
+*.pkl
+!data/synthetic_extra/*/*.pkl
+*.npz
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/

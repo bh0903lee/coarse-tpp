@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coarse-tpp"
+version = "1.0.0"
+description = "Interval likelihood, resolution audit and training treatments for neural temporal point processes on coarsely recorded event data"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = ["torch>=2.6", "numpy>=1.26", "scipy>=1.11", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["coarse_tpp*"]
+
+[tool.setuptools.package-data]
+coarse_tpp = ["resources/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
