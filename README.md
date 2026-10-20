@@ -126,16 +126,16 @@ floor scores of very narrow mixture components can move by up to about 1e-4).
 
 The audit (Section 2) and the training experiments (Sections 5.3, 6 and 8 and the Supplementary Material) are run by
 the commands above from the data listed in `data/README.md`. The two re-scoring analyses of Sections 5.1 and 5.2
-evaluate saved models that are not distributed with this repository. They are archived, with their configurations, per-event scores and the StackOverflow subsample, in a separate Zenodo deposit cited in the data availability statement of the paper:
+evaluate saved models that are not distributed with this repository. They are archived, with their configurations, per-event scores and the StackOverflow subsample, in the archive `coarse-tpp-saved-models.zip` attached to the release `saved-models-v1` of this repository (https://github.com/bh0903lee/coarse-tpp/releases):
 
 - **Section 5.1, Table 3 (saved mixture-density models).** The re-scoring code (`coarse_tpp/rescore.py`,
   `scripts/rescore_saved.py`) is the procedure used in the paper. The 1,020 saved checkpoints it was applied to are
-  in the Zenodo deposit, not in this repository. The experiment `floor_convention` retrains comparable models with this code (840 models: two
+  in that archive, not in the source tree. The experiment `floor_convention` retrains comparable models with this code (840 models: two
   parameterizations of the mixture head, 21 data sets, two learning rates, ten seeds, trained and selected under the
   floor 10⁻⁶); it approximates the saved models of the paper but is not identical to them (their number and the
   training code differ), so its scores are expected to be close to, not equal to, Table 3. The StackOverflow subsample
-  is not reconstructible from public files and is included in the deposit (see `data/README.md`).
-- **Section 5.2, Supplementary Table S2 (intensity-based models).** The selected EasyTPP checkpoints are in the Zenodo deposit. The
+  is not reconstructible from public files and is included in the archive (see `data/README.md`).
+- **Section 5.2, Supplementary Table S2 (intensity-based models).** The selected EasyTPP checkpoints are in that archive. The
   models were trained with the EasyTPP implementation of RMTPP, NHP, SAHP and AttNHP with the settings of
   `configs/easytpp_intensity.yaml` (an EasyTPP runner configuration: hidden size 64, 100 epochs, learning rate 10⁻³,
   batch size 32, seed 42, 10 Monte Carlo samples per interval for the compensator) and a time-only objective (the

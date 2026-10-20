@@ -70,7 +70,7 @@ this repository. As with every pickle file, loading executes code; load only fil
 
 Not reconstructible from the public files here: the StackOverflow subsample (`stackoverflow_sub`), used in the audit
 (Table 1) and in the re-scoring of saved models and of intensity models, is a subsample whose sequence list is not
-recorded in this repository; it is included in the Zenodo deposit cited in the data availability statement of the paper. The other 22 audited data sets are reconstructible from the sources above.
+recorded in this repository; it is included in the saved-models archive of the release `saved-models-v1`. The other 22 audited data sets are reconstructible from the sources above.
 
 ## Derived data sets
 
