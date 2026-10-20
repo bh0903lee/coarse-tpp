@@ -4,6 +4,7 @@ import math
 import numpy as np
 import pytest
 import torch
+import torch.nn.functional as F
 from scipy import integrate
 
 from coarse_tpp import lik, readout as Ro
@@ -51,3 +52,15 @@ def test_rules_of_the_treatments():
     assert Ro.RULE["interval"] == Ro.RULE["jitter_gap"] == Ro.RULE["iw_jitter"] == Ro.RULE["interval_jitter_mix"] == "raw"
     assert Ro.RULE["jitter_time"] == Ro.RULE["jitter_time_gauss"] == Ro.RULE["triangular"] == "smooth"
     assert Ro.RULE["point_mass"] == "point_mass"
+
+
+def test_tie_mask_follows_the_score():
+    ms, sec = 1 / 3.6e6, 1 / 3600                                       # 1 ms and 1 s in hours
+    tau = T(0.0, ms, sec)
+    assert Ro.tie_mask(tau, 1 / 3.6e6).tolist() == [True, False, False]
+    assert Ro.tie_mask(tau, 1.0).tolist() == [True, False, False]
+    assert Ro.tie_mask(tau, 0.0).tolist() == [True, True, False]
+    law, tl = law1(), T(0.4)
+    lawb = lik.LogNormMix(law.log_w.expand(3, 2), law.mu.expand(3, 2), law.log_sigma.expand(3, 2))
+    c = Ro.C(lawb, tl.expand(3), tau, ms, "point_mass")                 # the 1 ms gap is scored as a positive cell
+    assert abs(float(c[1]) - float(F.logsigmoid(-tl) + lik.event_loglik(law, T(ms), "triangular", delta=ms))) < 1e-12

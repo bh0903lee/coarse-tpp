@@ -8,8 +8,12 @@ audit: gaps of every given file are pooled, first events excluded; prints the au
        "dim_process": n} with events {"time_since_last_event": gap, ...}; sequences may be a list or a dict.
 score: the CSV has one row per target event with columns tau (recorded gap; stored ties <= 1.000001e-6 count as 0),
        F_lo (model distribution function of the time since the last recorded event at tau~) and F_hi (at
-       tau~ + delta). Prints the mean interval score with the tie / non-tie split as JSON. --delta is recorded in the
-       output only; the caller computes F_hi at tau~ + delta.
+       tau~ + delta); for a law with atoms at positive times, the left limits of the distribution function at both
+       edges. Values outside [0, 1] or with F_hi < F_lo (beyond a roundoff of 1e-9) are an error. Prints as JSON the
+       mean interval score over all events with the tie / non-tie split (-Infinity when a cell has zero
+       probability), all_finite, the counts of -inf and non-finite scores, and mean_finite, the mean over the finite
+       scores only (a diagnostic, not the score over all events). --delta is recorded in the output only; the
+       caller computes F_hi at tau~ + delta.
 """
 from __future__ import annotations
 
@@ -54,7 +58,10 @@ def main(argv=None):
         rows = list(csv.DictReader(open(args.csv)))
         tau = np.asarray([float(r["tau"]) for r in rows]); lo = np.asarray([float(r["F_lo"]) for r in rows])
         hi = np.asarray([float(r["F_hi"]) for r in rows])
-        ll, tie = S.interval_loglik_from_cdf(tau, lo, hi, args.tie_stored)
+        try:
+            ll, tie = S.interval_loglik_from_cdf(tau, lo, hi, args.tie_stored)
+        except ValueError as e:
+            ap.error(f"{args.csv}: {e}")
         out = S.summarize(ll, tie); out["delta"] = args.delta
         print(json.dumps(out, indent=1))
 

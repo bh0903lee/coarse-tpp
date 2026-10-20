@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import torch
 
-from coarse_tpp import data as D, experiments as X, lik, results as R, synthetic as S, train as TR
+from coarse_tpp import data as D, experiments as X, lik, readout as Ro, results as R, synthetic as S, train as TR
 
 ROOT = Path(__file__).resolve().parents[1]
 OPT = dict(batch_size=32, max_epochs=2, patience=20, grad_clip=1.0)
@@ -136,3 +136,38 @@ def test_latent_score_of_coarsened_data(datadir, tmp_path):
     latent_score.main([str(run)])
     rows = [json.loads(x) for x in (run / "latent_scores.jsonl").read_text().splitlines()]
     assert len(rows) == 2 and not any(r["mismatch"] for r in rows) and all(math.isfinite(r["test"]["B"]) for r in rows)
+
+
+@pytest.mark.parametrize("arm", ["interval", "point_mass"])
+def test_evaluate_tie_split_follows_the_score(datadir, tmp_path, arm):
+    """Process logs (unit hours) keep exact zeros and genuine 1 ms gaps (2.8e-7 h): at delta > 0 only the recorded zeros
+    are ties, at delta = 0 every gap <= TIE0; the overall scores do not depend on the split."""
+    from coarse_tpp.models import build
+    ms, sec = 1 / 3.6e6, 1 / 3600
+    rng = np.random.default_rng(2)
+    for sp in ("train", "dev", "test"):
+        seqs = []
+        for _ in range(6):
+            g = np.concatenate([[0.0], np.tile([0.0, ms, sec], 5), rng.exponential(0.5, 5)])
+            seqs.append([dict(time_since_start=float(t), time_since_last_event=float(x), type_event=0)
+                         for t, x in zip(np.cumsum(g), g)])
+        (datadir / "bpi_ties").mkdir(exist_ok=True)
+        pickle.dump({sp: seqs, "dim_process": 1}, open(datadir / "bpi_ties" / f"{sp}.pkl", "wb"))
+    v = D.load("bpi_ties", "test")
+    tau = np.concatenate([x[1:] for x in v.coarse.iet])
+    assert (tau == ms).sum() == 30 and (tau == 0).sum() == 30
+    for delta, n_ties in ((ms, 30), (0.0, 60)):
+        cfg = cfg_of(tmp_path, "bpi_ties", arm if delta else "floor_1e-10", delta)
+        st = D.coarse_stats(D.load("bpi_ties", "train"), delta)
+        torch.manual_seed(0)
+        model = build(cfg, st, 1)
+        out, per_seq = TR.evaluate(model, v, st, cfg, torch.device("cpu"))
+        assert out["n_events"] == len(tau) and out["n_ties"] == n_ties and out["tie_share"] == n_ties / len(tau)
+        for k in ("C", "floor_1e-6"):
+            mix = out["tie_share"] * out[f"{k}_tie"] + (1 - out["tie_share"]) * out[f"{k}_nontie"]
+            assert abs(mix - out[k]) < 1e-9
+        b = D.make_batch(v.coarse, np.arange(len(v.coarse)), "cpu")
+        with torch.no_grad():
+            law, tl, _ = TR.fwd(model, b, st, cfg)
+            c = Ro.C(law, tl, b.iet[:, 1:].double(), delta, TR.rule(cfg))
+        assert abs(float(c[b.tmask > 0].mean()) - out["C"]) < 1e-9

@@ -1,12 +1,14 @@
 """The audit rule and the model-agnostic interval score."""
 import csv
 import json
+import math
 import pickle
 import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 
 from coarse_tpp import lik, score as S
@@ -75,3 +77,69 @@ def test_cli_audit_and_score(tmp_path):
         w.writerow([1e-6, 0.0, 0.2]); w.writerow([3.0, 0.6, 0.7]); w.writerow([5.0, 0.9, 0.95])
     out = run("score", "--csv", str(c), "--delta", "1")
     assert out["n"] == 3 and out["n_tie"] == 1 and abs(out["mean"] - np.mean(np.log([0.2, 0.1, 0.05]))) < 1e-9
+    assert out["all_finite"] and out["mean_finite"] == out["mean"]
+    with open(c, "a", newline="") as fh:
+        csv.writer(fh).writerow([7.0, 0.97, 0.97])                       # a cell of zero probability
+    out = run("score", "--csv", str(c), "--delta", "1")
+    assert out["mean"] == -np.inf and not out["all_finite"] and out["n_neg_inf"] == 1 and out["n_finite"] == 3
+    with open(c, "a", newline="") as fh:
+        csv.writer(fh).writerow([8.0, 0.0, 2.0])                         # not a distribution function value
+    bad = subprocess.run([sys.executable, str(ROOT / "scripts" / "score.py"), "score", "--csv", str(c)], capture_output=True, text=True)
+    assert bad.returncode != 0 and "[0, 1]" in bad.stderr
+
+
+class _Exp:
+    """Exp(rate) with an optional atom of mass w at x0: the law w delta_x0 + (1 - w) Exp(rate)."""
+
+    def __init__(self, rate=1.0, w=0.0, x0=0.0, with_interval=False):
+        self.rate, self.w, self.x0 = rate, w, x0
+        if with_interval:
+            self.log_interval = lambda a, b: torch.log(self.cdf(b, left=True) - self.cdf(a, left=True))
+
+    def cdf(self, x, left=False):
+        x = torch.as_tensor(x, dtype=torch.float64)
+        cont = (1 - self.w) * (-torch.expm1(-self.rate * x.clamp(min=0)))
+        atom = (x > self.x0) if left else (x >= self.x0)
+        return cont + self.w * atom.double()
+
+
+def test_cdf_path_continuous_and_atoms():
+    tau, d = np.array([0.0, 0.5, 2.0]), 1.0
+    ref = np.log(np.exp(-tau) - np.exp(-(tau + d)))
+    ll, tie = S.interval_loglik(_Exp(), tau, d)                            # continuous law: P[a, b) = F(b) - F(a)
+    assert np.allclose(ll, ref, atol=1e-12) and tie.tolist() == [True, False, False]
+    ll, _ = S.interval_loglik(_Exp(w=0.5), np.array([0.0]), 1.0)          # atom at the origin counts toward the tie cell
+    assert abs(ll[0] - math.log(0.5 + 0.5 * (1 - math.exp(-1)))) < 1e-12
+    p_lo = 0.5 + 0.5 * (math.exp(-1) - math.exp(-2))                       # atom at 1: in [1, 2), not in [0, 1)
+    p_hi = 0.5 * (1 - math.exp(-1))
+    law = _Exp(w=0.5, x0=1.0, with_interval=True)                          # positive atoms need log_interval
+    ll, _ = S.interval_loglik(law, np.array([1.0, 1e-6]), 1.0)
+    assert np.allclose(ll, np.log([p_lo, p_hi]), atol=1e-12)
+    lo, hi = law.cdf(torch.tensor([1.0]), left=True).numpy(), law.cdf(torch.tensor([2.0]), left=True).numpy()
+    ll, _ = S.interval_loglik_from_cdf(np.array([1.0]), lo, hi)            # or the left limits at both edges
+    assert abs(ll[0] - math.log(p_lo)) < 1e-12
+
+
+def test_cdf_inputs_are_validated_and_zero_mass_is_minus_infinity():
+    ll, _ = S.interval_loglik_from_cdf(np.array([1.0, 2.0]), np.array([0.5, 0.3]), np.array([0.5, 0.3 + 1e-12]))
+    assert ll[0] == -np.inf and np.isfinite(ll[1]) and abs(ll[1] - math.log(1e-12)) < 1e-3
+    ll, _ = S.interval_loglik_from_cdf(np.array([1.0]), np.array([0.5]), np.array([0.5 - 1e-12]))   # roundoff
+    assert ll[0] == -np.inf
+    ll, _ = S.interval_loglik_from_cdf(np.array([1.0]), np.array([0.2]), np.array([1.0 + 1e-12]))
+    assert abs(ll[0] - math.log(0.8)) < 1e-9
+    for lo, hi in ((0.0, 2.0), (-0.1, 0.5), (0.6, 0.5), (math.nan, 0.5), (0.1, math.inf)):
+        with pytest.raises(ValueError):
+            S.interval_loglik_from_cdf(np.array([1.0]), np.array([lo]), np.array([hi]))
+    with pytest.raises(ValueError):
+        S.interval_loglik_from_cdf(np.array([1.0, 2.0]), np.array([0.1]), np.array([0.2, 0.3]))
+
+
+def test_summarize_separates_all_events_from_finite_scores():
+    s = S.summarize(np.log([0.2, 0.1, 0.05]), np.array([True, False, False]))
+    assert s["all_finite"] and s["n_finite"] == 3 and s["n_neg_inf"] == 0 and s["mean"] == s["mean_finite"]
+    assert abs(s["mean_tie"] - math.log(0.2)) < 1e-12 and abs(s["mean_nontie"] - math.log(0.005) / 2) < 1e-12
+    s = S.summarize(np.array([-1.0, -np.inf]), np.array([False, False]))
+    assert s["mean"] == -np.inf and s["mean_nontie"] == -np.inf and s["mean_tie"] is None
+    assert not s["all_finite"] and s["n_neg_inf"] == 1 and s["n_nonfinite"] == 1 and s["mean_finite"] == -1.0 and s["n"] == 2
+    s = S.summarize(np.array([-1.0, np.nan]), np.array([True, False]))
+    assert math.isnan(s["mean"]) and s["mean_tie"] == -1.0 and s["n_neg_inf"] == 0 and s["n_nonfinite"] == 1

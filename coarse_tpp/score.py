@@ -8,11 +8,15 @@
       Per-event scores. For a recorded gap tau~ (0 for a tie) and resolution delta the interval score is
       log P(tau~ <= s < tau~ + delta) = log(F(tau~ + delta) - F(tau~)), where F is the model's distribution function
       of the time since the last recorded event. A model only needs to provide F at the two cell edges (any head:
-      density, mixture or intensity via F = 1 - exp(-Lambda)). The floor score is the density at max(tau~, eps),
-      the convention the interval score replaces; it is kept for comparison.
+      density, mixture or intensity via F = 1 - exp(-Lambda)). The difference of F is the probability of the
+      half-open cell when the law has no atom at a positive time; an atom at 0 is allowed (at a tie the lower edge
+      is taken as F(0-) = 0). For a law with atoms at positive times pass the left limits F(x-) at both edges, or
+      give the law a `log_interval(a, b)` method. A cell of exact zero probability scores -inf. The floor score is
+      the density at max(tau~, eps), the convention the interval score replaces; it is kept for comparison.
 
   summarize(ll, tie)
-      Mean score with the tie / non-tie split.
+      Mean score over all events with the tie / non-tie split, the number of non-finite scores and the mean over
+      the finite scores only (a diagnostic, not the score over all events).
 
 Recorded zero gaps are often stored as a small positive floor (the NHP / EasyTPP files store 1e-6); pass
 tie_stored=1.000001e-6 (the default) to read such values as ties, or 0.0 for files that store exact zeros.
@@ -25,6 +29,7 @@ from typing import Any
 import numpy as np
 
 TIE_STORED = 1.000001e-6
+CDF_TOL = 1e-9          # tolerated roundoff of distribution function values outside [0, 1] or decreasing
 _CLOCK = (1.0, 60.0, 3600.0, 86400.0)
 CANDIDATES = sorted({round(k * 10.0 ** e, 12) for e in range(-6, 6) for k in (1, 2, 5)}
                     | {2.0 ** -e for e in range(1, 21)}
@@ -84,30 +89,47 @@ def detect_resolution(gaps, constructed: float | None = None, tie_stored: float 
 
 # ------------------------------------------------------------------ scores
 def _log_diff(F_hi, F_lo):
-    p = np.asarray(F_hi, np.float64) - np.asarray(F_lo, np.float64)
-    if np.any(p < -1e-9):
+    """log(F_hi - F_lo) for distribution function values; -inf for a cell of zero probability. Values must be finite
+    with 0 <= F_lo <= F_hi <= 1 up to CDF_TOL (differences within the tolerance are clipped to [0, 1])."""
+    F_hi, F_lo = np.asarray(F_hi, np.float64), np.asarray(F_lo, np.float64)
+    if not (np.isfinite(F_hi).all() and np.isfinite(F_lo).all()):
+        raise ValueError("distribution function values must be finite")
+    if np.any(F_lo < -CDF_TOL) or np.any(F_hi > 1 + CDF_TOL):
+        raise ValueError("distribution function values must lie in [0, 1]")
+    p = F_hi - F_lo
+    if np.any(p < -CDF_TOL):
         raise ValueError("F(tau + delta) < F(tau): the distribution function must be non-decreasing")
-    return np.log(np.clip(p, 1e-300, None))
+    with np.errstate(divide="ignore"):
+        return np.log(np.clip(p, 0.0, 1.0))
 
 
 def interval_loglik_from_cdf(tau, F_lo, F_hi, tie_stored: float = TIE_STORED):
     """Per-event interval score log(F_hi - F_lo) from the model's distribution function at the cell edges
-    F_lo = F(tau~) and F_hi = F(tau~ + delta) (F_lo must be 0 for ties, where tau~ = 0). Returns (ll, tie)."""
+    F_lo = F(tau~) and F_hi = F(tau~ + delta); for ties (tau~ = 0) F_lo is set to 0. For a law with atoms at positive
+    times F_lo and F_hi must be the left limits F(tau~-) and F((tau~ + delta)-). tau, F_lo and F_hi must have the same
+    shape; invalid values raise ValueError (see _log_diff). Returns (ll, tie)."""
     g = read_gaps(tau, tie_stored)
-    F_lo = np.where(g <= 0, 0.0, np.asarray(F_lo, np.float64))
+    F_lo, F_hi = np.asarray(F_lo, np.float64), np.asarray(F_hi, np.float64)
+    if not (g.shape == F_lo.shape == F_hi.shape):
+        raise ValueError(f"tau, F_lo and F_hi must have the same shape, got {g.shape}, {F_lo.shape}, {F_hi.shape}")
+    F_lo = np.where(g <= 0, 0.0, F_lo)
     return _log_diff(F_hi, F_lo), g <= 0
 
 
 def interval_loglik(law, tau, delta: float, tie_stored: float = TIE_STORED):
-    """Per-event interval score for a law object with `log_interval(a, b)` (coarse_tpp.lik laws) or `cdf(x)`
-    (any callable returning F); tau are stored gaps (torch or numpy). Returns (ll, tie) as numpy arrays."""
+    """Per-event interval score for a law object with `log_interval(a, b)` = log P(a <= S < b) (coarse_tpp.lik laws)
+    or `cdf(x)` (any callable returning F); tau are stored gaps (torch or numpy). The `cdf` path is exact for laws
+    without atoms at positive times (an atom at 0 counts toward the tie cell); other laws must provide
+    `log_interval`. Returns (ll, tie) as numpy arrays."""
     import torch
     t = torch.as_tensor(np.asarray(tau, np.float64))
     g = torch.where(t <= tie_stored, torch.zeros_like(t), t)
     if hasattr(law, "log_interval"):
         ll = law.log_interval(g, g + delta)
     else:
-        ll = torch.log((law.cdf(g + delta) - law.cdf(g)).clamp(min=1e-300))
+        F_lo = torch.where(g <= 0, torch.zeros_like(g), torch.as_tensor(law.cdf(g), dtype=torch.float64))
+        F_hi = torch.as_tensor(law.cdf(g + delta), dtype=torch.float64)
+        return _log_diff(F_hi.detach().cpu().numpy(), F_lo.detach().cpu().numpy()), (g <= 0).cpu().numpy()
     return ll.detach().cpu().numpy().astype(np.float64), (g <= 0).cpu().numpy()
 
 
@@ -121,11 +143,23 @@ def floor_loglik(law, tau, eps: float, tie_stored: float = TIE_STORED):
 
 
 def summarize(ll, tie) -> dict[str, Any]:
-    """Mean per-event score with the tie / non-tie split; non-finite values are counted, not averaged."""
+    """Mean per-event score over all events, with the tie / non-tie split.
+
+    mean, mean_tie, mean_nontie are over all events of the group: -inf when an event has a cell of zero probability,
+    nan when a score is nan (None for an empty group). all_finite tells whether every score is finite; n_neg_inf and
+    n_nonfinite count the -inf and all non-finite scores. mean_finite is the mean over the finite scores only (n_finite
+    of them), a diagnostic that must not be read as the score over all events."""
     ll = np.asarray(ll, np.float64); tie = np.asarray(tie, bool)
+    if ll.shape != tie.shape:
+        raise ValueError(f"ll and tie must have the same shape, got {ll.shape}, {tie.shape}")
     fin = np.isfinite(ll)
-    out = dict(n=int(ll.size), n_tie=int(tie.sum()), n_nonfinite=int((~fin).sum()),
-               mean=float(ll[fin].mean()) if fin.any() else math.nan)
-    out["mean_tie"] = float(ll[fin & tie].mean()) if (fin & tie).any() else None
-    out["mean_nontie"] = float(ll[fin & ~tie].mean()) if (fin & ~tie).any() else None
+
+    def mean(x):
+        with np.errstate(invalid="ignore"):
+            return float(np.mean(x)) if x.size else None
+
+    out = dict(n=int(ll.size), n_tie=int(tie.sum()), all_finite=bool(fin.all()), n_finite=int(fin.sum()),
+               n_neg_inf=int(np.isneginf(ll).sum()), n_nonfinite=int((~fin).sum()),
+               mean=mean(ll), mean_tie=mean(ll[tie]), mean_nontie=mean(ll[~tie]),
+               mean_finite=float(ll[fin].mean()) if fin.any() else math.nan)
     return out

@@ -46,7 +46,7 @@ def score_split(model, views, fine, stats, cfg, device, bs=64):
         L = b.iet.shape[1]
         m = b.tmask.double()
         tau = b.iet[:, 1:].double()
-        tie = (tau <= Ro.TIE0).double() * m
+        tie = Ro.tie_mask(tau, delta).double() * m
         law, tl = model(b, stats)
         c = Ro.C(law, tl, tau, delta, r)
         s = _pad(fine, idx, L, device)

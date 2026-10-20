@@ -206,7 +206,8 @@ def dev_criteria(model, views, stats, cfg, device, bs=64):
 
 @torch.no_grad()
 def evaluate(model, views, stats, cfg, device, bs=64):
-    """Metrics of the loaded checkpoint over scored targets, plus per-sequence sums."""
+    """Metrics of the loaded checkpoint over scored targets, plus per-sequence sums. Tie / non-tie means use the tie
+    definition of the score C (readout.tie_mask)."""
     model.eval()
     delta = float(cfg["delta"])
     r = rule(cfg)
@@ -227,7 +228,7 @@ def evaluate(model, views, stats, cfg, device, bs=64):
         L = b.iet.shape[1]
         m = (b.tmask * score_mask(views, idx, L, device)).double()
         tau = b.iet[:, 1:].double()
-        tie = (tau <= Ro.TIE0).double() * m
+        tie = Ro.tie_mask(tau, delta).double() * m
         law, tl, lp = fwd(model, b, stats, cfg)
         v = {"C": Ro.C(law, tl, tau, delta, r)}
         for k, e in FLOORS.items():

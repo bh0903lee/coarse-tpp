@@ -30,7 +30,7 @@ from scipy import stats as SS
 from . import data as D
 from . import lik
 from .analysis import audit_rows, fmt
-from .data import TIE_STORED, coarse_stats, load
+from .data import TIE_STORED, coarse_stats, load, stores_floor
 from .models import build
 
 FLOORS = {"floor_1e-10": 1e-10, "floor_1e-6": 1e-6, "floor_1e-5": 1e-5}
@@ -51,9 +51,10 @@ def per_event(model, views, stats, device, bs=64):
     return {k: torch.cat(v) for k, v in out.items()}
 
 
-def scores(lw, mu, ls, y, delta):
+def scores(lw, mu, ls, y, delta, floor=True):
+    """floor: the data set stores ties as TIE_STORED (data.stores_floor); process logs store exact zeros."""
     law = lik.LogNormMix(lw, mu, ls)
-    tau = torch.where(y <= TIE_STORED, torch.zeros_like(y), y).double()
+    tau = (torch.where(y <= TIE_STORED, torch.zeros_like(y), y) if floor else y).double()
     tie = tau <= 0
     v = {k: lik.event_loglik(law, tau, "floor", eps=e) for k, e in FLOORS.items()}
     if delta:
@@ -79,7 +80,7 @@ def score_cell(cfg, ckpt: Path, delta, device, cache=None):
     out = {}
     for name, v in (("dev", dv), ("test", te)):
         pe = per_event(model, v, stats, device)
-        out[name] = scores(pe["lw"], pe["mu"], pe["ls"], pe["y"], delta)
+        out[name] = scores(pe["lw"], pe["mu"], pe["ls"], pe["y"], delta, floor=stores_floor(ds))
     return out
 
 

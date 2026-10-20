@@ -60,6 +60,14 @@ or from a CSV with columns `tau, F_lo, F_hi`: `python scripts/score.py score --c
 built from `coarse_tpp.lik` (log-normal mixture, RMTPP, THP) can be scored directly with
 `score.interval_loglik(law, tau, delta)` and `score.floor_loglik(law, tau, eps)`.
 
+`F_hi - F_lo` is the probability of the half-open cell `[τ̃, τ̃ + Δ)` when the law has no atom at a positive time (an
+atom at 0 counts toward the tie cell); for a law with atoms at positive times, pass the left limits of the
+distribution function at both edges, or give the law a `log_interval(a, b)` method. Distribution function values
+outside [0, 1] or decreasing across the cell (beyond a roundoff of 1e-9) raise an error, and a cell of exact zero
+probability scores −∞. `summarize` returns `mean` over all events (−∞ if any cell has zero probability), its tie /
+non-tie split, `all_finite`, the counts `n_neg_inf` and `n_nonfinite`, and `mean_finite`, the mean over the
+finite scores only (`n_finite` events), a diagnostic that is not the score over all events.
+
 **Train and score one cell (CPU smoke test, under a minute).**
 
 ```bash
@@ -75,7 +83,8 @@ unset COARSE_TPP_DATA
 
 `result.json` holds, for each checkpoint selection (`C`: dev interval score, `own`: the treatment's own objective,
 `B`: dev latent-time score on synthetic data), the test scores `C`, `B`, `floor_1e-10`, `floor_1e-6`, `floor_1e-5`,
-the true-law scores `oracle_C`, `oracle_B` (synthetic data) and their tie / non-tie means.
+the true-law scores `oracle_C`, `oracle_B` (synthetic data) and their tie / non-tie means. A tie is a recorded gap
+≤ 10⁻⁶ when Δ = 0 and a recorded zero gap after loading when Δ > 0, as in the score `C`.
 
 ## Reproducing the paper
 

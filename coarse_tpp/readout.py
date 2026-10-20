@@ -17,6 +17,8 @@ delta = 0: C is the log score with respect to (point mass at 0) + (Lebesgue on (
   continuous models   tie: log Q(TIE0)                       gap > TIE0: log q(gap)
   point_mass          tie: log(pi + (1 - pi) Q(TIE0))         gap > TIE0: log(1 - pi) + log q(gap)
 B of the point-mass model at delta = 0 is log(1 - pi) + log q.
+delta > 0: a tie is a recorded zero gap after loading (coarse_tpp.data); a positive gap below TIE0 is not a tie.
+The tie / non-tie diagnostics use the same definition (tie_mask).
 """
 from __future__ import annotations
 
@@ -33,6 +35,11 @@ RULE = {"latent": "raw", "floor": "raw", "interval": "raw", "jitter_gap": "raw",
 TIE0 = 1e-6
 
 
+def tie_mask(tau, delta):
+    """Recorded ties as scored by C: gaps <= TIE0 at delta = 0, recorded zero gaps at delta > 0."""
+    return tau <= TIE0 if delta == 0 else tau <= 0
+
+
 def _smooth_B(law, s, delta):
     s = s.double()
     return law.log_interval((s - delta).clamp(min=0.0), s.clamp(min=1e-300)) - math.log(delta)
@@ -41,15 +48,14 @@ def _smooth_B(law, s, delta):
 def C(law, tl, tau, delta, rule):
     """Per-event recorded-cell score under the readout `rule`."""
     tau = tau.double()
+    tie = tie_mask(tau, delta)
     if delta == 0:
-        tie = tau <= TIE0
         dens = law.log_density(torch.where(tie, torch.ones_like(tau), tau))
         q0 = law.log_cdf(torch.full_like(tau, TIE0))
         if rule == "point_mass":
             lp, l1p = F.logsigmoid(tl.double()), F.logsigmoid(-tl.double())
             return torch.where(tie, torch.logaddexp(lp, l1p + q0), l1p + dens)
         return torch.where(tie, q0, dens)
-    tie = tau <= 0
     gap = lik.event_loglik(law, tau, "interval", delta=delta)
     if rule == "raw":
         return gap

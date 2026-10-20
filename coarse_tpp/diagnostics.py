@@ -129,7 +129,7 @@ def model_cell(path: Path, bs: int = 128):
         lr, h = profile_stats(lq[m].numpy())
         sv = D.per_target(v, "lat_s", idx, L, dev)
         sv = torch.where(m, sv, torch.ones_like(sv))
-        LR.append(lr); H.append(h); TIE.append((tau <= Ro.TIE0)[m].numpy())
+        LR.append(lr); H.append(h); TIE.append(Ro.tie_mask(tau, delta)[m].numpy())
         Bs.append(Ro.B(law, tl, sv, delta, rule)[m].numpy()); Cs.append(Ro.C(law, tl, tau, delta, rule)[m].numpy())
     lr, h, tie = np.concatenate(LR), np.concatenate(H), np.concatenate(TIE)
     Bv, Cv = np.concatenate(Bs), np.concatenate(Cs)
