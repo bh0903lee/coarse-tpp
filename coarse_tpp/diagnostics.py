@@ -1,4 +1,4 @@
-"""Diagnostics of saved models on synthetic data: the density inside a recorded cell (Section 8, S3). No training.
+"""Diagnostics of trained models on synthetic data: the density inside a recorded cell (Section 8, S3). No training.
 
     python -m coarse_tpp.diagnostics true_law [--settings SC:1.0 SP:1.0] [--realizations 1 2 3 4 5] [--out FILE]
     python -m coarse_tpp.diagnostics models --run RUN_DIR [--cells GLOB] [--procs N] [--out FILE]

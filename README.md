@@ -68,8 +68,8 @@ python scripts/generate_synthetic.py --processes SP --realizations 1 --n-total 1
 python scripts/make_grid.py synthetic --out runs/smoke --datasets synth_SP_r1_d0p3 --max-epochs 2
 python scripts/run_grid.py runs/smoke --only interval__mix_gru_K8__synth_SP_r1_d0p3__lr1e3__s0
 cat runs/smoke/cells/synthetic__interval__mix_gru_K8__synth_SP_r1_d0p3__lr1e3__s0/result.json   # test C, B, floors
-python scripts/rescore_saved.py score runs/smoke --selection C       # re-score the saved checkpoint
-python scripts/rescore_saved.py report runs/smoke
+python scripts/rescore_trained.py score runs/smoke --selection C       # re-score the trained checkpoint
+python scripts/rescore_trained.py report runs/smoke
 unset COARSE_TPP_DATA
 ```
 
@@ -92,7 +92,7 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Paper | Experiment / command | Cells |
 |---|---|---:|
 | Section 2, Table 1 and Appendix B (audit of 23 data sets; 22 are reconstructible from public files, the StackOverflow subsample is not) | `scripts/audit.py --out results/audit` | — |
-| Section 5.1, Table 3 and Supplementary Section S2 (re-scoring saved mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_saved.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
+| Section 5.1, Table 3 and Supplementary Section S2 (re-scoring trained mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_trained.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
 | Section 5.2 and Supplementary Table S2 (re-scoring intensity-based models; see "Reproduction scope") | `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` (EasyTPP runs) | — |
 | Section 5.3, Table 4 and Supplementary Table S3; Section 6.2, Supplementary Table S1; S2 (mixture head) | `rank_change` | 1,440 |
 | Sections 5.3, 6.2 and S2 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
@@ -119,21 +119,21 @@ intervals are one-sided 95% t intervals. *Preserved*: lower bound of [interval �
 non-interval treatment chosen by dev C. These rules are implemented in `coarse_tpp/analysis.py`.
 
 Results are deterministic for a given device and library version (seeded data order, initialization and jitter
-draws). Evaluating a saved model on another device changes the scores in the 6th to 8th decimal (float32 encoders;
+draws). Evaluating a trained model on another device changes the scores in the 6th to 8th decimal (float32 encoders;
 floor scores of very narrow mixture components can move by up to about 1e-4).
 
 ## Reproduction scope
 
 The audit (Section 2) and the training experiments (Sections 5.3, 6 and 8 and the Supplementary Material) are run by
 the commands above from the data listed in `data/README.md`. The two re-scoring analyses of Sections 5.1 and 5.2
-evaluate saved models that are not distributed with this repository. They are archived, with their configurations, scores and the StackOverflow subsample, in the archive `coarse-tpp-saved-models.zip` attached to the release `saved-models-v1` of this repository (https://github.com/bh0903lee/coarse-tpp/releases):
+evaluate trained models that are not distributed with this repository. They are archived, with their configurations, scores and the StackOverflow subsample, in the archive `coarse-tpp-trained-models.zip` attached to the release `trained-models-v1` of this repository (https://github.com/bh0903lee/coarse-tpp/releases):
 
-- **Section 5.1, Table 3 (saved mixture-density models).** The re-scoring code (`coarse_tpp/rescore.py`,
-  `scripts/rescore_saved.py`) is the procedure used in the paper. The 1,020 saved checkpoints it was applied to are
+- **Section 5.1, Table 3 (trained mixture-density models).** The re-scoring code (`coarse_tpp/rescore.py`,
+  `scripts/rescore_trained.py`) is the procedure used in the paper. The 1,020 trained checkpoints it was applied to are
   in that archive, not in the source tree, except the 60 trained on MIMIC-II (the original database requires a data
   use agreement), whose scores alone are included. The experiment `floor_convention` retrains comparable models with this code (840 models: two
   parameterizations of the mixture head, 21 data sets, two learning rates, ten seeds, trained and selected under the
-  floor 10⁻⁶); it approximates the saved models of the paper but is not identical to them (their number and the
+  floor 10⁻⁶); it approximates the trained models of the paper but is not identical to them (their number and the
   training code differ), so its scores are expected to be close to, not equal to, Table 3. The StackOverflow subsample
   is not reconstructible from public files and is included in the archive (see `data/README.md`).
 - **Section 5.2, Supplementary Table S2 (intensity-based models).** The selected EasyTPP checkpoints are in that archive. The
@@ -170,7 +170,7 @@ evaluate saved models that are not distributed with this repository. They are ar
 | GRU / Transformer encoder | encoders `gru`, `transformer` |
 | setting (process, Δ) and realization r | data set `synth_<process>_r<r>_d<Δ>`, e.g. `synth_SC_r1_d1p0` |
 | ratio of the largest to the smallest density inside a cell | `diagnostics.py`, `ratio` |
-| re-scoring saved models | `floor_convention` + `rescore.py` |
+| re-scoring trained models | `floor_convention` + `rescore.py` |
 | re-scoring intensity-based models | `rescore_intensity.py` |
 | rankings of training treatments | experiment `rank_change` |
 | predictive accuracy of the selected models (law q_B, median, truncated CRPS twCRPS) | `predictive.py` (`cdf`, `median`, `cell_crps`), `scripts/predictive_accuracy.py` |
@@ -214,7 +214,7 @@ coarse_tpp/           the package
 scripts/              command-line entry points
 configs/              EasyTPP runner configuration of the re-scored intensity models (Section 5.2)
 tests/                unit and end-to-end tests (CPU)
-third_party/easy_tpp/ vendored EasyTPP models (S2P2 repository, commit c393324, Apache-2.0) for re-scoring saved
+third_party/easy_tpp/ vendored EasyTPP models (S2P2 repository, commit c393324, Apache-2.0) for re-scoring trained
                       intensity models
 data/README.md        sources and preparation of every data set
 data/synthetic_extra/ four simulated data sets that are not available elsewhere (about 23 MB)

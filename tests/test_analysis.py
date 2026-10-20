@@ -61,5 +61,5 @@ def test_advantage_needs_min_seeds(tmp_path):
 
 def test_floor_convention_has_no_training_report(tmp_path):
     import pytest
-    with pytest.raises(SystemExit, match="rescore_saved"):
+    with pytest.raises(SystemExit, match="rescore_trained"):
         A.run_report("floor_convention", tmp_path)

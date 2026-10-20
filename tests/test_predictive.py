@@ -1,4 +1,4 @@
-"""Predictive law q_B of the waiting time, cell CRPS, and the re-evaluation of saved models (coarse_tpp.predictive)."""
+"""Predictive law q_B of the waiting time, cell CRPS, and the re-evaluation of trained models (coarse_tpp.predictive)."""
 import json
 import math
 import pickle

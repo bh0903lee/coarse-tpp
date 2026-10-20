@@ -640,7 +640,7 @@ def run_report(experiment, run, audit_path=None, base=None):
     elif experiment == "coarsened_real":
         L, s = report_coarsened(run, audit)
     elif experiment == "floor_convention":
-        raise SystemExit("floor_convention is reported by scripts/rescore_saved.py score/report (see README)")
+        raise SystemExit("floor_convention is reported by scripts/rescore_trained.py score/report (see README)")
     else:
         raise SystemExit(f"unknown experiment {experiment}")
     (run / "report.md").write_text("\n".join(L) + "\n")

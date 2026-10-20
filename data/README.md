@@ -2,7 +2,7 @@
 
 Most data sets used in the paper are public and are not distributed with this repository; this file lists where to
 obtain each of them, how to convert it into the layout read by `coarse_tpp.data`, and the original source to cite.
-Two exceptions: four simulated data sets (power-law and correlated Pareto gaps, used only in the re-scoring of saved
+Two exceptions: four simulated data sets (power-law and correlated Pareto gaps, used only in the re-scoring of trained
 models) are not available elsewhere and are distributed here in `data/synthetic_extra/`, and one StackOverflow
 subsample cannot be reconstructed (see "Not reconstructible" below).
 
@@ -26,7 +26,7 @@ python scripts/audit.py --out results/audit
 | Retweet | `retweet` | Zhao et al., SEISMIC, KDD 2015 | NHP data release (Mei and Eisner 2017) | NHP pickles: `scripts/prepare_nhp.py --src DIR --name retweet` |
 | Retweet (subsample) | `retweet_sub` | as Retweet | 900 / 100 / 200 sequences of the NHP files | `scripts/prepare_subsample.py` (index in `coarse_tpp/resources/retweet_subsample.json`) |
 | StackOverflow | `stackoverflow` | Du et al., RMTPP, KDD 2016 (preprocessing) | EasyTPP (Hugging Face `easytpp/stackoverflow`) | `scripts/prepare_easytpp.py --json-dir RAW/stackoverflow --name stackoverflow` |
-| StackOverflow (subsample) | `stackoverflow_sub` | as StackOverflow | a 900 / 100 / 200-sequence subsample whose sequence list was not retained | not reconstructible; used in the audit (Table 1) and in the re-scoring of saved models and of intensity models (see below) |
+| StackOverflow (subsample) | `stackoverflow_sub` | as StackOverflow | a 900 / 100 / 200-sequence subsample whose sequence list was not retained | not reconstructible; used in the audit (Table 1) and in the re-scoring of trained models and of intensity models (see below) |
 | Taxi | `taxi` | Whong, FOILing NYC's Taxi Trip Data, 2014 | EasyTPP (`easytpp/taxi`) | `scripts/prepare_easytpp.py --json-dir RAW/taxi --name taxi --max-seqs 2000 0 500 --min-len 5` |
 | Earthquake | `earthquake` | U.S. Geological Survey, ANSS ComCat, 2017 | EasyTPP (`easytpp/earthquake`) | as Taxi, `--name earthquake` |
 | Volcano | `volcano` | Global Volcanism Program, Volcanoes of the World v. 4, 2013 | EasyTPP (`easytpp/volcano`) | `scripts/prepare_easytpp.py --json-dir RAW/volcano --name volcano` |
@@ -63,14 +63,14 @@ table.
 
 Simulated data distributed here: `data/synthetic_extra/{syn_powerlaw_01,syn_powerlaw_02,syn_corr_pareto_01,
 syn_corr_pareto_02}/{train,dev,test}.pkl` (about 23 MB in total, SHA-256 in `data/synthetic_extra/SHA256SUMS`),
-single-mark sequences with power-law or correlated Pareto-distributed gaps, used only in the re-scoring of saved
+single-mark sequences with power-law or correlated Pareto-distributed gaps, used only in the re-scoring of trained
 models (`floor_convention`). `scripts/download_synthetic_exp.sh` copies them, together with Synthetic-Exp, into the
 data directory and stops with an error if a source folder is missing. They are distributed under the MIT License of
 this repository. As with every pickle file, loading executes code; load only files from the sources listed here.
 
 Not reconstructible from the public files here: the StackOverflow subsample (`stackoverflow_sub`), used in the audit
-(Table 1) and in the re-scoring of saved models and of intensity models, is a subsample whose sequence list is not
-recorded in this repository; it is included in the saved-models archive of the release `saved-models-v1`. The other 22 audited data sets are reconstructible from the sources above.
+(Table 1) and in the re-scoring of trained models and of intensity models, is a subsample whose sequence list is not
+recorded in this repository; it is included in the trained-models archive of the release `trained-models-v1`. The other 22 audited data sets are reconstructible from the sources above.
 
 ## Derived data sets
 

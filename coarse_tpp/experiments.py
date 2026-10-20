@@ -23,7 +23,7 @@ Experiments (paper section in brackets):
   new_datasets            MemeTracker, MOOC and Wikipedia (control)                                [5.3, 6.2, S2]
   floor_convention        GRU + mixture models trained and selected under the floor 1e-6 convention, two
                           parameterizations of the mixture head, 21 data sets; models of the kind that
-                          coarse_tpp.rescore re-scores, an approximation of the saved models of the
+                          coarse_tpp.rescore re-scores, an approximation of the trained models of the
                           paper (see README, "Reproduction scope")                                  [5.1, S2]
 """
 from __future__ import annotations

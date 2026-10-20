@@ -167,7 +167,7 @@ NAN = float("nan")
 def report(run, compare_arms=None, tied_min=0.01):
     rows = load_rows(run)
     checks = [r["check"]["abs_diff"] for r in rows if r.get("check")]
-    L = ["# Re-scoring of saved models", "", f"cells scored: {len(rows)}; max |dev floor_1e-6 - stored dev criterion| over "
+    L = ["# Re-scoring of trained models", "", f"cells scored: {len(rows)}; max |dev floor_1e-6 - stored dev criterion| over "
          f"{len(checks)} checked cells = {max(checks, default=NAN):.2e}", "",
          "## Test log-likelihood per event of the same models under three floors and the interval score (mean over seeds)", "",
          "| data set | model | lr | ties (test) | floor 1e-10 | floor 1e-6 | floor 1e-5 | interval | spread over floors |",

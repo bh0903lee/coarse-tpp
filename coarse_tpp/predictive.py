@@ -1,4 +1,4 @@
-"""Predictive accuracy of saved models of the rank_change experiment (Supplementary S3, Table S4). No training.
+"""Predictive accuracy of trained models of the rank_change experiment (Supplementary S3, Table S4). No training.
 
     python -m coarse_tpp.predictive score RUN_DIR [--only CELL_ID] [--limit N] [--force]
     python -m coarse_tpp.predictive report RUN_DIR [--audit results/audit/audit.json]
@@ -176,7 +176,7 @@ def cell_crps(law, pi, rule, delta, tau, n0=N0, panels=N_PANELS, cap=None):
     return crps, tw, lc
 
 
-# ------------------------------------------------------------------ saved models
+# ------------------------------------------------------------------ trained models
 @torch.no_grad()
 def per_event(model, views, stats, cfg, device, bs=64):
     """Mixture parameters, tie probabilities, recorded gaps and C of every scored test target (flat tensors), with

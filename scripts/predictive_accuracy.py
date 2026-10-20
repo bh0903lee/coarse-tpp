@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Predictive accuracy of the saved models of a rank_change run (see coarse_tpp.predictive)."""
+"""Predictive accuracy of the trained models of a rank_change run (see coarse_tpp.predictive)."""
 import _bootstrap  # noqa: F401
 from coarse_tpp.predictive import main
 
