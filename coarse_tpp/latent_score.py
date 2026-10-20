@@ -91,7 +91,7 @@ def main(argv=None):
                 cache = {ds: (tr, dv, te, load_fine_s(ds, "dev"), load_fine_s(ds, "test"), coarse_stats(tr, float(cfg["delta"])))}
             tr, dv, te, f_dv, f_te, stats = cache[ds]
             model = build(cfg, stats, tr.coarse.n_types).to(device)
-            model.load_state_dict(torch.load(cdir / "best_C.pt", map_location=device))
+            model.load_state_dict(torch.load(cdir / "best_C.pt", map_location=device, weights_only=True))
             r = dict(cell_id=m["cell_id"], arm=cfg["arm"], dataset=ds, seed=cfg["seed"],
                      config=dict(dataset=ds, encoder=cfg["encoder"], head=cfg["head"], K=cfg["K"], lr_tag=cfg["lr_tag"],
                                  treatment=cfg["treatment"], delta=cfg["delta"]),

@@ -1,4 +1,4 @@
-"""Predictive accuracy of saved models of the rank_change experiment (Supplementary S3, Table S3). No training.
+"""Predictive accuracy of saved models of the rank_change experiment (Supplementary S3, Table S4). No training.
 
     python -m coarse_tpp.predictive score RUN_DIR [--only CELL_ID] [--limit N] [--force]
     python -m coarse_tpp.predictive report RUN_DIR [--audit results/audit/audit.json]
@@ -248,7 +248,7 @@ def score_cell(res, device):
     tr, te = load(ds, "train", raw=raw), load(ds, "test", raw=raw)
     stats = coarse_stats(tr, delta)
     model = build(cfg, stats, tr.coarse.n_types).to(device)
-    model.load_state_dict(torch.load(Path(cfg["out_dir"]) / "best_C.pt", map_location=device))
+    model.load_state_dict(torch.load(Path(cfg["out_dir"]) / "best_C.pt", map_location=device, weights_only=True))
     P = per_event(model, te, stats, cfg, device)
     stored = float(res["by_selection"]["C"]["test"]["C"])
     met = measures(P, rule, delta, cap=float(stats.max_train_iet))

@@ -3,6 +3,7 @@ import json
 import pickle
 
 import numpy as np
+import pytest
 
 from coarse_tpp import data as D
 from coarse_tpp.prepare import coarsen, jodie, quantize, resplit
@@ -60,3 +61,17 @@ def test_jodie_conversion_builds_user_sequences_with_the_floor_convention(tmp_pa
     d = pickle.load(open(tmp_path / "log" / "train.pkl", "rb"))
     gaps = [e["time_since_last_event"] for s in d["train"] for e in s[1:]]
     assert min(gaps) >= 1e-6 and all(len(s) >= 2 for s in d["train"])
+
+
+def test_bpi_download_failure_exits_with_status_one(tmp_path, monkeypatch):
+    from coarse_tpp.prepare import bpi as B
+
+    def fail(url, timeout=600):
+        raise OSError("no network")
+
+    monkeypatch.setattr(B, "_get", fail)
+    with pytest.raises(SystemExit) as e:
+        B.main(["download", "sepsis", f"--raw={tmp_path}"])
+    assert e.value.code == 1
+    rec = json.loads((tmp_path / "downloads.json").read_text())["sepsis"]
+    assert rec["status"] == "failed" and rec["attempts"]

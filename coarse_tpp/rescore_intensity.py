@@ -1,5 +1,5 @@
 """Re-scoring of saved intensity-based models (RMTPP, NHP, SAHP, AttNHP of EasyTPP) under floors and the interval
-score (Section 5.2, Supplementary Table S1, S2). No training.
+score (Section 5.2, Supplementary Table S2). No training.
 
     python -m coarse_tpp.rescore_intensity score --ckpt CKPT_DIR --out OUT_DIR [--datasets ...] [--nodes 32]
     python -m coarse_tpp.rescore_intensity report --ckpt CKPT_DIR --out OUT_DIR

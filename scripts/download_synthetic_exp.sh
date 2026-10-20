@@ -7,7 +7,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 RAW="${RAW:-data/raw/synthetic_datasets}"
 EXTRA="data/synthetic_extra"
-[ -d "$RAW" ] || git clone --depth 1 https://github.com/bh0903lee/BMT-synthetic-datasets "$RAW"
+SRC_COMMIT=de7d3bd5bc1e54b79295112fb68db29bb50d800f   # pinned revision of BMT-synthetic-datasets
+if [ ! -d "$RAW" ]; then
+  git init -q "$RAW"
+  git -C "$RAW" fetch -q --depth 1 https://github.com/bh0903lee/BMT-synthetic-datasets "$SRC_COMMIT"
+  git -C "$RAW" checkout -q FETCH_HEAD
+fi
 missing=0
 for pair in "$RAW/syn_exp_01:synthetic_exp" \
             "$EXTRA/syn_powerlaw_01:synthetic_powerlaw_01" "$EXTRA/syn_powerlaw_02:synthetic_powerlaw_02" \

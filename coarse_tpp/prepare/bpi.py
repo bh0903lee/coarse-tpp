@@ -5,7 +5,7 @@
     python -m coarse_tpp.prepare.bpi all      [short ...]
 
 Logs (short names): sepsis, bpic12, bpic13i, helpdesk, bpic20dd, bpic20ptc, bpic20rfp; official deposits and DOIs
-below. Licences: BPIC 2020 logs CC BY-NC 4.0; the others the 4TU.ResearchData General Terms of Use.
+below. Licenses: BPIC 2020 logs CC BY-NC 4.0; the others the 4TU.ResearchData General Terms of Use.
 
 Preprocessing (MoTPP, Yuan et al., Section 5.1, which follows Weytjens and De Weerdt 2022,
 github.com/hansweytjens/predictive-process-monitoring-benchmarks, create_benchmarks.py):
@@ -404,23 +404,11 @@ def convert(short: str, log: dict) -> dict:
     return meta
 
 
-def cmd_convert(shorts):
-    man_p = RAW / "downloads.json"
-    man = json.loads(man_p.read_text()) if man_p.exists() else {}
-    for s in shorts:
-        if not (RAW / LOGS[s]["fname"]).exists():
-            print(f"{s}: raw file missing, skipped")
-            continue
-        m = convert(s, LOGS[s])
-        sp = m["splits"]
-        print(f"{s}: train/dev/test cases {sp['train']['cases']}/{sp['dev']['cases']}/{sp['test']['cases']} "
-              f"ties {m['tie_share_all']:.3f} delta {m['resolution_raw_log']['delta_name']} "
-              f"median gap {m['median_gap_all']:.4g} h  dl={man.get(s, {}).get('source')}")
-
-
 def cmd_download(shorts):
+    """Fetch the raw logs; returns the short names whose download failed (recorded in RAW/downloads.json)."""
     man_p = RAW / "downloads.json"
     man = json.loads(man_p.read_text()) if man_p.exists() else {}
+    failed = []
     for s in shorts:
         rec = download(s, LOGS[s])
         if rec["status"] == "present" and s in man and man[s].get("sha256") == rec["sha256"]:
@@ -428,7 +416,10 @@ def cmd_download(shorts):
             continue
         man[s] = {**man.get(s, {}), **rec}
         print(f"{s}: {rec['status']} {rec.get('attempts', '')}")
+        if rec["status"] == "failed":
+            failed.append(s)
     man_p.write_text(json.dumps(man, indent=1))
+    return failed
 
 
 def cmd_convert(shorts):
@@ -454,10 +445,14 @@ def main(argv=None):
         if x.startswith("--raw="):
             RAW = Path(x.split("=", 1)[1])
     shorts = rest or list(LOGS)
+    failed = []
     if cmd in ("download", "all"):
-        cmd_download(shorts)
+        failed = cmd_download(shorts)
     if cmd in ("convert", "all"):
-        cmd_convert(shorts)
+        cmd_convert([s for s in shorts if s not in failed])
+    if failed:
+        print(f"download failed: {', '.join(failed)} (attempted URLs in {RAW / 'downloads.json'})", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -46,3 +46,22 @@ def test_all_four_models_build_and_score():
         m = W.build_model(mid, cfg(mid), torch.device("cpu"))
         res = W.score_split(m, mid, seqs(), 2, 0.1, 8, "cpu")
         assert math.isfinite(res["floor_1e-6"]) and math.isfinite(res["interval"]), mid
+
+
+def test_intensity_config_holds_the_paper_settings_and_builds_every_model():
+    from pathlib import Path
+
+    import yaml
+
+    c = yaml.safe_load((Path(__file__).resolve().parents[1] / "configs" / "easytpp_intensity.yaml").read_text())
+    assert c["pipeline_config_id"] == "runner_config"
+    for mid in W.MODELS:
+        b = c[f"{mid}_train"]
+        assert b["base_config"]["model_id"] == mid
+        t = b["trainer_config"]
+        assert (t["batch_size"], t["max_epoch"], t["learning_rate"], t["seed"]) == (32, 100, 1e-3, 42)
+        mc = b["model_config"]
+        assert mc["hidden_size"] == 64 and mc["loss_integral_num_sample_per_step"] == 10
+        m = W.build_model(mid, {"model_config": dict(mc, num_event_types=2, num_event_types_pad=3, event_pad_index=2)},
+                          torch.device("cpu"))
+        assert m.hidden_size == 64 and m.loss_integral_num_sample_per_step == 10

@@ -26,7 +26,7 @@ python scripts/audit.py --out results/audit
 | Retweet | `retweet` | Zhao et al., SEISMIC, KDD 2015 | NHP data release (Mei and Eisner 2017) | NHP pickles: `scripts/prepare_nhp.py --src DIR --name retweet` |
 | Retweet (subsample) | `retweet_sub` | as Retweet | 900 / 100 / 200 sequences of the NHP files | `scripts/prepare_subsample.py` (index in `coarse_tpp/resources/retweet_subsample.json`) |
 | StackOverflow | `stackoverflow` | Du et al., RMTPP, KDD 2016 (preprocessing) | EasyTPP (Hugging Face `easytpp/stackoverflow`) | `scripts/prepare_easytpp.py --json-dir RAW/stackoverflow --name stackoverflow` |
-| StackOverflow (subsample) | `stackoverflow_sub` | as StackOverflow | a 900 / 100 / 200-sequence subsample whose sequence list was not retained | see "Not reconstructible" below |
+| StackOverflow (subsample) | `stackoverflow_sub` | as StackOverflow | a 900 / 100 / 200-sequence subsample whose sequence list was not retained | not reconstructible; used in the audit (Table 1) and in the re-scoring of saved models and of intensity models (see below) |
 | Taxi | `taxi` | Whong, FOILing NYC's Taxi Trip Data, 2014 | EasyTPP (`easytpp/taxi`) | `scripts/prepare_easytpp.py --json-dir RAW/taxi --name taxi --max-seqs 2000 0 500 --min-len 5` |
 | Earthquake | `earthquake` | U.S. Geological Survey, ANSS ComCat, 2017 | EasyTPP (`easytpp/earthquake`) | as Taxi, `--name earthquake` |
 | Volcano | `volcano` | Global Volcanism Program, Volcanoes of the World v. 4, 2013 | EasyTPP (`easytpp/volcano`) | `scripts/prepare_easytpp.py --json-dir RAW/volcano --name volcano` |
@@ -44,7 +44,10 @@ python scripts/audit.py --out results/audit
 | further simulated sets | `synthetic_powerlaw_01/02`, `synthetic_corr_pareto_01/02` | simulations generated for this study | this repository, `data/synthetic_extra/` | same script |
 | Sepsis, BPIC12, BPIC13-inc., Helpdesk, BPIC20-DD, -PTC, -RfP | `bpi_sepsis`, `bpi_bpic12`, `bpi_bpic13i`, `bpi_helpdesk`, `bpi_bpic20dd`, `bpi_bpic20ptc`, `bpi_bpic20rfp` | 4TU.ResearchData deposits (DOIs in `coarse_tpp/prepare/bpi.py`) | official 4TU files | `scripts/download_bpi.sh` (download and conversion; preprocessing rules in `coarse_tpp/prepare/bpi.py`) |
 
-Sources of the raw files:
+Sources of the raw files. The NHP data release (Retweet, BookOrder, MIMIC-II, ContTime, MemeTracker) and the data
+sets derived from it (`retweet_sub`, `conttime_q02`, `conttime_q10`, `coarsened_conttime_*` and their `_resplit`
+versions) require a manual download of the NHP pickles; the other sources are fetched by the scripts named in the
+table.
 - NHP data release: the Google Drive folder linked from the data page of the neural Hawkes process code of Mei and
   Eisner, https://github.com/hongyuanmei/neurawkes/blob/master/data/README.md (Retweet, BookOrder, MIMIC-II,
   ContTime, MemeTracker; for BookOrder and MIMIC-II, which come in several folds, fold 3 and fold 1 are used). One
@@ -52,7 +55,7 @@ Sources of the raw files:
 - EasyTPP: the Hugging Face dataset repositories `easytpp/<name>` (files `train.json`, `dev.json`, `test.json`);
   `scripts/download_easytpp.sh NAME` fetches them.
 - SNAP: https://snap.stanford.edu/data/email-Eu-core-temporal.html, https://snap.stanford.edu/data/CollegeMsg.html
-  (`scripts/download_snap.sh`) and http://snap.stanford.edu/jodie/ (`scripts/download_jodie.sh`). The SNAP pages ask
+  (`scripts/download_snap.sh`) and https://snap.stanford.edu/jodie/ (`scripts/download_jodie.sh`). The SNAP pages ask
   for citation of the original papers.
 - 4TU.ResearchData: BPIC 2020 logs under CC BY-NC 4.0, the other logs under the 4TU.ResearchData General Terms of Use.
 - Synthetic-Exp: the repository github.com/bh0903lee/BMT-synthetic-datasets is released under the MIT License;
@@ -65,9 +68,9 @@ models (`floor_convention`). `scripts/download_synthetic_exp.sh` copies them, to
 data directory and stops with an error if a source folder is missing. They are distributed under the MIT License of
 this repository. As with every pickle file, loading executes code; load only files from the sources listed here.
 
-Not reconstructible from the public files here: the StackOverflow subsample (`stackoverflow_sub`), used only for the
-re-scoring of saved models and of intensity models, is a subsample whose sequence list is not recorded in this
-repository.
+Not reconstructible from the public files here: the StackOverflow subsample (`stackoverflow_sub`), used in the audit
+(Table 1) and in the re-scoring of saved models and of intensity models, is a subsample whose sequence list is not
+recorded in this repository; it is included in the Zenodo deposit cited in the data availability statement of the paper. The other 22 audited data sets are reconstructible from the sources above.
 
 ## Derived data sets
 

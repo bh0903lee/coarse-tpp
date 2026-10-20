@@ -1,0 +1,133 @@
+# EasyTPP runner configuration of the intensity-based models re-scored in Section 5.2 (RMTPP, NHP, SAHP, AttNHP).
+# Format: EasyTPP `pipeline_config_id: runner_config` (one `data` entry per data set and one experiment block per
+# model; the blocks below share the trainer settings through YAML anchors). The `model_config` blocks are the ones
+# that `coarse_tpp.rescore_intensity.build_model` reads back from a saved run's `config.yaml`.
+#
+# Training settings: hidden size 64, 100 epochs, learning rate 1e-3, batch size 32, seed 42, 10 Monte Carlo samples
+# per interval for the compensator. The time-only objective (each model's `loglike_loss` returns `-time_ll.sum()`
+# in place of `loss`) is not a configuration option; see README.md, "Reproduction scope".
+#
+# Replace DATASET by the folder name under data/ and set num_event_types (dim_process of the pickles) and
+# pad_token_id (= num_event_types); the pickles of this repository are in the NHP / EasyTPP layout.
+
+pipeline_config_id: runner_config
+
+data:
+  DATASET:
+    data_format: pickle
+    train_dir: data/DATASET/train.pkl
+    valid_dir: data/DATASET/dev.pkl
+    test_dir: data/DATASET/test.pkl
+    data_specs:
+      num_event_types: 22
+      pad_token_id: 22
+      padding_side: right
+      truncation_side: right
+
+trainer: &trainer
+  batch_size: 32
+  max_epoch: 100
+  shuffle: false
+  optimizer: adam
+  learning_rate: 1.e-3
+  valid_freq: 1
+  use_tfb: false
+  metrics: ['acc', 'rmse']
+  seed: 42
+  gpu: 0
+
+base: &base
+  stage: train
+  backend: torch
+  dataset_id: DATASET
+  runner_id: std_tpp
+  base_dir: './checkpoints/'
+
+RMTPP_train:
+  base_config:
+    <<: *base
+    model_id: RMTPP
+  trainer_config: *trainer
+  model_config:
+    hidden_size: 64
+    time_emb_size: 16
+    loss_integral_num_sample_per_step: 10
+    use_mc_samples: true
+    thinning:
+      num_seq: 10
+      num_sample: 1
+      num_exp: 500
+      look_ahead_time: 10
+      patience_counter: 5
+      over_sample_rate: 5
+      num_samples_boundary: 5
+      dtime_max: 5
+      num_step_gen: 1
+
+NHP_train:
+  base_config:
+    <<: *base
+    model_id: NHP
+  trainer_config: *trainer
+  model_config:
+    hidden_size: 64
+    loss_integral_num_sample_per_step: 10
+    use_mc_samples: true
+    thinning:
+      num_seq: 10
+      num_sample: 1
+      num_exp: 500
+      look_ahead_time: 10
+      patience_counter: 5
+      over_sample_rate: 5
+      num_samples_boundary: 5
+      dtime_max: 5
+      num_step_gen: 1
+
+SAHP_train:
+  base_config:
+    <<: *base
+    model_id: SAHP
+  trainer_config: *trainer
+  model_config:
+    hidden_size: 64
+    time_emb_size: 16
+    num_layers: 2
+    num_heads: 2
+    use_ln: false
+    loss_integral_num_sample_per_step: 10
+    use_mc_samples: true
+    thinning:
+      num_seq: 10
+      num_sample: 1
+      num_exp: 500
+      look_ahead_time: 10
+      patience_counter: 5
+      over_sample_rate: 5
+      num_samples_boundary: 5
+      dtime_max: 5
+      num_step_gen: 1
+
+AttNHP_train:
+  base_config:
+    <<: *base
+    model_id: AttNHP
+  trainer_config: *trainer
+  model_config:
+    hidden_size: 64
+    time_emb_size: 16
+    num_layers: 2
+    num_heads: 2
+    use_ln: false
+    loss_integral_num_sample_per_step: 10
+    use_mc_samples: true
+    thinning:
+      num_seq: 10
+      num_sample: 1
+      num_exp: 500
+      look_ahead_time: 10
+      patience_counter: 5
+      over_sample_rate: 5
+      num_samples_boundary: 5
+      dtime_max: 5
+      num_step_gen: 1

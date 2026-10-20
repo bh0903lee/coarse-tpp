@@ -1,4 +1,4 @@
-"""Diagnostics of saved models on synthetic data: the density inside a recorded cell (Section 7, S3). No training.
+"""Diagnostics of saved models on synthetic data: the density inside a recorded cell (Section 8, S3). No training.
 
     python -m coarse_tpp.diagnostics true_law [--settings SC:1.0 SP:1.0] [--realizations 1 2 3 4 5] [--out FILE]
     python -m coarse_tpp.diagnostics models --run RUN_DIR [--cells GLOB] [--procs N] [--out FILE]
@@ -113,7 +113,7 @@ def model_cell(path: Path, bs: int = 128):
     st = D.coarse_stats(D.load(cfg["dataset"], "train"), delta)
     dev = torch.device("cpu")
     model = build(cfg, st, v.coarse.n_types).to(dev)
-    model.load_state_dict(torch.load(path / "best_C.pt", map_location=dev))
+    model.load_state_dict(torch.load(path / "best_C.pt", map_location=dev, weights_only=True))
     model.eval()
     sg = torch.tensor(grid(delta), dtype=torch.float64)
     LR, H, Bs, Cs, TIE = [], [], [], [], []

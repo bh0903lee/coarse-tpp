@@ -74,7 +74,7 @@ def score_cell(cfg, ckpt: Path, delta, device, cache=None):
         cache.clear(); cache[(ds, raw)] = (tr, dv, te, coarse_stats(tr, float(cfg["delta"])))
     tr, dv, te, stats = cache[(ds, raw)]
     model = build(cfg, stats, tr.coarse.n_types).to(device)
-    model.load_state_dict(torch.load(ckpt, map_location=device))
+    model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
     model.eval()
     out = {}
     for name, v in (("dev", dv), ("test", te)):
