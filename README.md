@@ -93,7 +93,7 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 |---|---|---:|
 | Section 2, Table 1 and Appendix B (audit of 23 data sets; 22 are reconstructible from public files, the StackOverflow subsample is not) | `scripts/audit.py --out results/audit` | — |
 | Section 5.1, Table 3 and Supplementary Section S2 (re-scoring trained mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_trained.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
-| Section 5.2 and Supplementary Table S2 (re-scoring intensity-based models; see "Reproduction scope") | `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` (EasyTPP runs) | — |
+| Section 5.2 and Supplementary Tables S2 and S3 (re-scoring intensity-based models; see "Reproduction scope") | `rescore_intensity_models.py` of the trained-models archive (integration rule of the paper); `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` gives single-rule scores of RMTPP, NHP, SAHP and AttNHP runs | — |
 | Section 5.3, Table 4 and Supplementary Table S3; Section 6.2, Supplementary Table S1; S2 (mixture head) | `rank_change` | 1,440 |
 | Sections 5.3, 6.2 and S2 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
 | Section 6.1, S1 and S2 (synthetic data) | `synthetic` | 5,040 |
@@ -136,14 +136,18 @@ evaluate trained models that are not distributed with this repository. They are 
   floor 10⁻⁶); it approximates the trained models of the paper but is not identical to them (their number and the
   training code differ), so its scores are expected to be close to, not equal to, Table 3. The StackOverflow subsample
   is not reconstructible from public files and is included in the archive (see `data/README.md`).
-- **Section 5.2, Supplementary Table S2 (intensity-based models).** The selected EasyTPP checkpoints are in that archive. The
-  models were trained with the EasyTPP implementation of RMTPP, NHP, SAHP and AttNHP with the settings of
-  `configs/easytpp_intensity.yaml` (an EasyTPP runner configuration: hidden size 64, 100 epochs, learning rate 10⁻³,
-  batch size 32, seed 42, 10 Monte Carlo samples per interval for the compensator) and a time-only objective (the
-  log-likelihood of the event times without the mark term: each model's `loglike_loss` returns `-time_ll.sum()` in
-  place of `loss`; this change is not a configuration option). Models trained in this way with EasyTPP can be
-  re-scored with `scripts/rescore_intensity.py`, which expects one EasyTPP run directory (`saved_model.pt`,
-  `config.yaml`, optionally the training log) per data set, model and run.
+- **Section 5.2, Supplementary Tables S2 and S3 (intensity-based models).** The selected EasyTPP checkpoints of
+  Table S2 (RMTPP, NHP, SAHP and AttNHP, seed 42, settings of `configs/easytpp_intensity.yaml`: hidden size 64, 100
+  epochs, learning rate 10⁻³, batch size 32, 10 Monte Carlo samples per interval for the compensator) and the models of
+  Table S3, retrained with seeds 0–4 on Email-EU, the Retweet subsample and CollegeMsg (RMTPP, NHP, SAHP, AttNHP, THP,
+  S2P2, FullyNN, IntensityFree; same settings), are in that archive. All were trained with a time-only objective (the
+  log-likelihood of the event times without the mark term; not a configuration option). The archive also holds the
+  patched EasyTPP model code needed to rebuild them and `rescore_intensity_models.py`, which reproduces the paper's
+  scores: compensators are integrated by a composite Gauss–Legendre rule graded toward both ends of each gap, for S2P2
+  additionally over every 1 s recording cell. `scripts/rescore_intensity.py` of this repository re-scores RMTPP, NHP,
+  SAHP and AttNHP runs (one EasyTPP run directory with `saved_model.pt` and `config.yaml` per data set, model and run)
+  with a single Gauss–Legendre rule per gap (`--nodes`, 32 by default); its values can differ from the paper's by up to
+  about 0.1 nats per event for intensities that rise steeply after an event.
 
 ## Names in the paper and in the code
 

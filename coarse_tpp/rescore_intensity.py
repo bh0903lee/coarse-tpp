@@ -1,5 +1,6 @@
-"""Re-scoring of saved intensity-based models (RMTPP, NHP, SAHP, AttNHP of EasyTPP) under floors and the interval
-score (Section 5.2, Supplementary Table S2). No training.
+"""Re-scoring of trained intensity-based models (RMTPP, NHP, SAHP, AttNHP of EasyTPP) under floors and the interval
+score with a single Gauss-Legendre rule per gap (Section 5.2). The values of Supplementary Tables S2 and S3 use the
+graded rule of `rescore_intensity_models.py` in the trained-models archive. No training.
 
     python -m coarse_tpp.rescore_intensity score --ckpt CKPT_DIR --out OUT_DIR [--datasets ...] [--nodes 32]
     python -m coarse_tpp.rescore_intensity report --ckpt CKPT_DIR --out OUT_DIR
@@ -267,7 +268,7 @@ def report(ckpt, out):
     out = Path(out)
     cells = [json.loads(p.read_text()) for p in sorted((out / "cells").glob("*.json"))]
     sel = select(cells, Path(ckpt))
-    L = ["# Re-scoring of saved intensity-based models", "",
+    L = ["# Re-scoring of trained intensity-based models", "",
          f"runs scored: {len(cells)}; excluded (training log does not match the data files): "
          f"{sum(bool(c.get('excluded')) for c in cells)}; chosen per (data set, model) by dev floor_1e-6. Mean per target event.", ""]
     same = 0

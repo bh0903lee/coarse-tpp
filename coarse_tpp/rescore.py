@@ -1,4 +1,4 @@
-"""Re-scoring of saved mixture-head models under floors and the interval score (Section 5.1). No training.
+"""Re-scoring of trained mixture-head models under floors and the interval score (Section 5.1). No training.
 
     python -m coarse_tpp.rescore score RUN_DIR [--selection own] [--audit results/audit/audit.json]
     python -m coarse_tpp.rescore report RUN_DIR [--compare floor_1e-6_sigma_sigmoid floor_1e-6_standard]

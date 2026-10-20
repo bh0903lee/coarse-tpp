@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""In-cell density diagnostics of saved synthetic-data models (see coarse_tpp.diagnostics)."""
+"""In-cell density diagnostics of trained synthetic-data models (see coarse_tpp.diagnostics)."""
 import _bootstrap  # noqa: F401
 from coarse_tpp.diagnostics import main
 

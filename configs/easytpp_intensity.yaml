@@ -1,4 +1,5 @@
-# EasyTPP runner configuration of the intensity-based models re-scored in Section 5.2 (RMTPP, NHP, SAHP, AttNHP).
+# EasyTPP runner configuration of the intensity-based models of Supplementary Table S2 (RMTPP, NHP, SAHP, AttNHP, seed 42;
+# the configurations of the five-seed models of Table S3 are in the trained-models archive).
 # Format: EasyTPP `pipeline_config_id: runner_config` (one `data` entry per data set and one experiment block per
 # model; the blocks below share the trainer settings through YAML anchors). The `model_config` blocks are the ones
 # that `coarse_tpp.rescore_intensity.build_model` reads back from a saved run's `config.yaml`.
