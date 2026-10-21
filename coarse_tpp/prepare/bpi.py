@@ -1,4 +1,4 @@
-"""Business process event logs (4TU.ResearchData) as temporal point process data sets (Section 6.2, S1).
+"""Business process event logs (4TU.ResearchData) as temporal point process data sets (Section 6.2, S2).
 
     python -m coarse_tpp.prepare.bpi download [short ...]   # fetch the raw logs into RAW_DIR (default DATA_DIR/raw_bpi)
     python -m coarse_tpp.prepare.bpi convert  [short ...]   # build DATA_DIR/bpi_<short>/{train,dev,test}.pkl

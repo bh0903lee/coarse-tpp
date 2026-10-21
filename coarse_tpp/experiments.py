@@ -8,23 +8,23 @@ recorded data set is read from the audit table (coarse_tpp.audit).
 
 Experiments (paper section in brackets):
   synthetic               seven processes x 5 realizations x delta in {0, .01, .03, .1, .3, 1}, GRU, seven
-                          treatments (delta = 0: latent)                                            [6.1, S1, S2]
-  rank_change             mixture head, nine data sets, GRU and Transformer, eight treatments       [5.3, 6.2, S2]
-  intensity_heads         RMTPP and THP heads, six data sets, five treatments                       [6.2, S1, S2]
-  process_logs            seven business process logs, marks as inputs, GRU and Transformer         [5.3, 6.2, S2]
-  delta_misspecification  interval likelihood (and uniform jitter) trained with delta_model = m x delta  [8, S3]
-  iw_jitter               multi-sample jitter, S in {1, 4, 16, 64}                                  [6.2, S3]
-  iw_jitter_large         SC and SP at delta = 1, S in {64, 256, 1024, 4096}                        [8, S3]
-  inbin_smoothing         triangular kernel and two interval / jitter mixtures                       [8, S3]
-  inbin_smoothing_seeds   triangular vs interval on the tied real data sets, 40 new seeds            [8, S3]
-  marks                   mark head with the time treatments, and a control trained on marks alone  [8, S3]
-  coarsened_real          ContTime, Taxi, StackOverflow coarsened to delta = r x median gap        [6.1, S3]
-  resplit                 rank_change (GRU, five treatments) on new random splits                  [5.3, 6.2, S2]
-  new_datasets            MemeTracker, MOOC and Wikipedia (control)                                [5.3, 6.2, S2]
+                          treatments (delta = 0: latent)                                            [6.1, S2, S3]
+  rank_change             mixture head, nine data sets, GRU and Transformer, eight treatments       [5.3, 6.2, S3]
+  intensity_heads         RMTPP and THP heads, six data sets, five treatments                       [6.2, S2, S3]
+  process_logs            seven business process logs, marks as inputs, GRU and Transformer         [5.3, 6.2, S3]
+  delta_misspecification  interval likelihood (and uniform jitter) trained with delta_model = m x delta  [8, S4]
+  iw_jitter               multi-sample jitter, S in {1, 4, 16, 64}                                  [6.2, S4]
+  iw_jitter_large         SC and SP at delta = 1, S in {64, 256, 1024, 4096}                        [8, S4]
+  inbin_smoothing         triangular kernel and two interval / jitter mixtures                       [8, S4]
+  inbin_smoothing_seeds   triangular vs interval on the tied real data sets, 40 new seeds            [8, S4]
+  marks                   mark head with the time treatments, and a control trained on marks alone  [8, S4]
+  coarsened_real          ContTime, Taxi, StackOverflow coarsened to delta = r x median gap        [6.1, S4]
+  resplit                 rank_change (GRU, five treatments) on new random splits                  [5.3, 6.2, S3]
+  new_datasets            MemeTracker, MOOC and Wikipedia (control)                                [5.3, 6.2, S3]
   floor_convention        GRU + mixture models trained and selected under the floor 1e-6 convention, two
                           parameterizations of the mixture head, 21 data sets; models of the kind that
                           coarse_tpp.rescore re-scores, an approximation of the trained models of the
-                          paper (see README, "Reproduction scope")                                  [5.1, S2]
+                          paper (see README, "Reproduction scope")                                  [5.1, S3]
 """
 from __future__ import annotations
 

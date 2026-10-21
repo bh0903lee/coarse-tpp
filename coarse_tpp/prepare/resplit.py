@@ -1,4 +1,4 @@
-"""New random splits (Section 5.3, S2): the sequences of train, dev and test of each parent data set are pooled and
+"""New random splits (Section 5.3, S3): the sequences of train, dev and test of each parent data set are pooled and
 re-dealt by one fixed permutation into splits of the original sizes. Sequences, recorded times, marks and the
 recording grid are unchanged.
 

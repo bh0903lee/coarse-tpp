@@ -101,23 +101,23 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Paper | Experiment / command | Cells |
 |---|---|---:|
 | Section 2, Table 1 and Appendix B (audit of 23 data sets; 22 are reconstructible from public files, the StackOverflow subsample is not) | `scripts/audit.py --out results/audit` | — |
-| Section 5.1, Table 3 and Supplementary Section S2 (re-scoring trained mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_trained.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
+| Section 5.1, Table 3 and Supplementary Sections S2 and S3 (re-scoring trained mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_trained.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
 | Section 5.2 and Supplementary Tables S2 and S3 (re-scoring intensity-based models; see "Reproduction scope") | `rescore_intensity_models.py` of the trained-models archive (integration rule of the paper); `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` gives single-rule scores of RMTPP, NHP, SAHP and AttNHP runs | — |
-| Section 5.3, Table 4 and Supplementary Table S3; Section 6.2, Supplementary Table S1; S2 (mixture head) | `rank_change` | 1,440 |
-| Sections 5.3, 6.2 and S2 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
-| Section 6.1, S1 and S2 (synthetic data) | `synthetic` | 5,040 |
-| Section 6.1 and S3 (coarsened real data) | `coarsened_real`, then `scripts/score_latent.py runs/coarsened_real` before the report | 1,440 |
-| Section 6.2, Supplementary Table S1; S1 and S2 (RMTPP, THP) | `intensity_heads` | 600 |
-| Sections 5.3 and 6.2, Supplementary Table S1; S2 (process logs) | `process_logs` | 840 |
-| Section 6.2 and S3 (multi-sample jitter) | `iw_jitter` | 1,380 |
-| Section 8 and S3 (self-correcting process at Δ = 1) | `iw_jitter_large`; `scripts/inbin_diagnostic.py true_law` and `models --run runs/synthetic --cells '*synth_SC_r*_d1p0*'` | 240 |
-| Section 8 and S3 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
-| Section 8 and S3 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
-| Section 8 and S3 (marks) | `marks` | 420 |
-| Section 5.3, S3 and Supplementary Table S4 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
+| Section 5.3, Table 4 and Supplementary Table S4; Section 6.2, Supplementary Table S1; S2 and S3 (mixture head) | `rank_change` | 1,440 |
+| Sections 5.3, 6.2 and S3 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
+| Section 6.1, S2 and S3 (synthetic data) | `synthetic` | 5,040 |
+| Section 6.1 and S4 (coarsened real data) | `coarsened_real`, then `scripts/score_latent.py runs/coarsened_real` before the report | 1,440 |
+| Section 6.2, Supplementary Table S1; S2 and S3 (RMTPP, THP) | `intensity_heads` | 600 |
+| Sections 5.3 and 6.2, Supplementary Table S1; S2 and S3 (process logs) | `process_logs` | 840 |
+| Section 6.2 and S4 (multi-sample jitter) | `iw_jitter` | 1,380 |
+| Section 8 and S4 (self-correcting process at Δ = 1) | `iw_jitter_large`; `scripts/inbin_diagnostic.py true_law` and `models --run runs/synthetic --cells '*synth_SC_r*_d1p0*'` | 240 |
+| Section 8 and S4 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
+| Section 8 and S4 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
+| Section 8 and S4 (marks) | `marks` | 420 |
+| Section 5.3, S4 and Supplementary Table S5 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
 
-Supplementary Table S4 is derived from the rows of `predictive/summary.json`: for each measure `m` in `rmse`,
-`rmse_median`, `mae_median`, `crps`, `twcrps`, the table reports the seed-paired difference `d_m` (interval-score
+Supplementary Table S5 is derived from the rows of `predictive/summary.json`: for `twcrps` and `mae_median` (the other
+measures, `rmse`, `rmse_median` and `crps`, are in the same file), the table reports the seed-paired difference `d_m` (interval-score
 choice minus floor-score choice) in percent of the floor-score choice's value, `100 × d_m / m_floor`; the same scaling
 applies to the upper bound `d_m_up95`.
 
@@ -156,7 +156,7 @@ evaluate trained models that are not distributed with this repository. They are 
   additionally over every 1 s recording cell. `scripts/rescore_intensity.py` of this repository re-scores RMTPP, NHP,
   SAHP and AttNHP runs (one EasyTPP run directory with `saved_model.pt` and `config.yaml` per data set, model and run)
   with a single Gauss–Legendre rule per gap (`--nodes`, 32 by default); its values can differ from the paper's by up to
-  about 0.1 nats per event for intensities that rise steeply after an event.
+  about 0.7 nats per event (retrained RMTPP on Email-EU) for intensities that rise steeply after an event.
 
 ## Names in the paper and in the code
 
@@ -164,7 +164,7 @@ evaluate trained models that are not distributed with this repository. They are 
 |---|---|
 | ε-floor log-likelihood, ε = 10⁻¹⁰, 10⁻⁶, 10⁻⁵ | score keys `floor_1e-10`, `floor_1e-6`, `floor_1e-5`; training treatment `floor` (arms `floor_1e-10`, `floor_1e-6`, `floor_1e-5`) |
 | interval likelihood (objective) / interval score (evaluation) | treatment `interval`; `lik.event_loglik(..., "interval")`; `score.interval_loglik` |
-| observed-cell score C | `C` |
+| recorded-cell score C | `C` |
 | latent-time score B | `B` |
 | conversion rules (readouts) | `readout.RULE`: `raw`, `smooth`, `point_mass` |
 | smoothed density q_B | readout `smooth` |
@@ -186,7 +186,7 @@ evaluate trained models that are not distributed with this repository. They are 
 | re-scoring trained models | `floor_convention` + `rescore.py` |
 | re-scoring intensity-based models | `rescore_intensity.py` |
 | rankings of training treatments | experiment `rank_change` |
-| predictive accuracy of the selected models (law q_B, median, truncated CRPS twCRPS) | `predictive.py` (`cdf`, `median`, `cell_crps`), `scripts/predictive_accuracy.py` |
+| predictive accuracy of the selected models (law q_B, median, threshold-weighted ranked probability score twCRPS) | `predictive.py` (`cdf`, `median`, `cell_crps`), `scripts/predictive_accuracy.py` |
 | new random splits of the same data sets | experiment `resplit`, data sets `<name>_resplit` |
 | data sets not used elsewhere (MemeTracker, MOOC; Wikipedia as control) | experiment `new_datasets` |
 | ContTime, Taxi, StackOverflow coarsened to Δ = r × median gap | experiment `coarsened_real`, data sets `coarsened_<base>_r<r>` |
