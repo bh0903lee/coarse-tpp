@@ -77,6 +77,7 @@ recorded in this repository; it is included in the trained-models archive of the
 ```bash
 python scripts/prepare_quantized.py         # conttime_q02, conttime_q10 (with resolution.json)
 python scripts/prepare_coarsened.py         # coarsened_{conttime,taxi,stackoverflow}_r{0p03,0p1,0p3,1}
+python scripts/prepare_coarsened.py --more  # coarsened_earthquake_r{0p03,0p1,0p3,1}, coarsened_taobao_r{0p3,1} (storage-grain rule)
 python scripts/prepare_resplit.py           # <name>_resplit for the eight data sets of the ranking experiment
 python scripts/generate_synthetic.py        # data/synthetic/<process>_r<r>.npz, seven processes x five realizations
 python scripts/audit.py --out results/audit # after every change of the data directory

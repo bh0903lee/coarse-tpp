@@ -25,11 +25,24 @@ Experiments (paper section in brackets):
                           parameterizations of the mixture head, 21 data sets; models of the kind that
                           coarse_tpp.rescore re-scores, an approximation of the trained models of the
                           paper (see README, "Reproduction scope")                                  [5.1, S3]
+  component_bounds        the five same-density treatments of rank_change retrained with lower bounds on the
+                          mixture components (sigma_k >= 2, mu_k >= log 1e-4, both), GRU, three tied data
+                          sets; the unbounded arm is the rank_change run                             [5.3, S4]
+  triangular_coarsened    the triangular-kernel likelihood on the coarsened_real sets, GRU and Transformer;
+                          the other treatments are the coarsened_real run                            [S4]
+  triangular_jitter       multi-sample triangular jitter, S in {1, 16, 64}, on the coarsened sets with
+                          r in {0.3, 1} (GRU, Transformer) and on the synthetic main settings (seeds 4, 5,
+                          as inbin_smoothing)                                                         [S4]
+  coarsened_more          Earthquake and Taobao coarsened to delta = r x median gap (coarse_tpp.prepare.coarsen
+                          --more), all treatments of coarsened_real plus triangular, GRU and Transformer [S4]
+  triangular_recorded     the triangular-kernel likelihood on the nine data sets of rank_change and the seven
+                          process logs; the other treatments are the rank_change / process_logs runs   [8, S4]
 """
 from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from . import synthetic as Syn
@@ -49,6 +62,8 @@ FLOOR_ARMS = {"floor_1e-10": 1e-10, "floor_1e-6": 1e-6, "floor_1e-5": 1e-5}
 def arm_spec(arm: str):
     if arm in FLOOR_ARMS:
         return "floor", dict(eps=FLOOR_ARMS[arm])
+    if arm.startswith("iw_jitter_triangular_S"):
+        return "iw_jitter_triangular", dict(iw_samples=int(arm[len("iw_jitter_triangular_S"):]))
     if arm.startswith("iw_jitter_S"):
         return "iw_jitter", dict(iw_samples=int(arm[len("iw_jitter_S"):]))
     if arm.startswith("interval_jitter_mix_"):
@@ -119,6 +134,24 @@ FLOOR_CONV_DATASETS = ("amazon", "bookorder", "collegemsg", "conttime", "conttim
 FLOOR_CONV_PARAMS = ("standard", "sigma_sigmoid")
 FLOOR_CONV_SEEDS = tuple(range(10))
 
+# component bounds (Supplementary S4, "Component location and scale"): sigma_min in raw log-time units, mu_min the
+# floor of the raw log-time location (log of 10 x the largest floor)
+BOUNDS_DATASETS = ("email_eu", "retweet", "conttime_q10")
+BOUNDS_ARMS = SAME_DENSITY_ARMS
+SIGMA_MIN, MU_MIN = 2.0, math.log(1e-4)
+BOUNDS = {"sigmin2": dict(sigma_min=SIGMA_MIN), "mumin1e-4": dict(mu_min=MU_MIN),
+          "sigmin2_mumin1e-4": dict(sigma_min=SIGMA_MIN, mu_min=MU_MIN)}
+
+# triangular kernel on coarsened and recorded data (Supplementary S4, "Smoothing objectives")
+TRI_IW_S = (1, 16, 64)
+TRI_IW_R = (0.3, 1.0)
+TRI_IW_ARMS = tuple(f"iw_jitter_triangular_S{S}" for S in TRI_IW_S)
+# Earthquake and Taobao coarsened on purpose; a level r is kept only when delta is at least ten times the storage
+# grain of the base (coarse_tpp.prepare.coarsen.storage_tick): Taobao stores its times on a 1e-4 grain, so
+# r = 0.03 and 0.1 are dropped by that rule, Earthquake has no grain and keeps every level
+COARSEN_MORE_LEVELS = {"earthquake": (0.03, 0.1, 0.3, 1.0), "taobao": (0.3, 1.0)}
+COARSEN_MORE_ARMS = ("floor_1e-10", "floor_1e-6", "jitter_gap", "jitter_time", "point_mass", "interval", "triangular")
+
 
 def rcode(r):
     return f"{r:g}".replace(".", "p")
@@ -128,7 +161,15 @@ def coarsened_name(base, r):
     return f"coarsened_{base}_r{rcode(r)}"
 
 
+def coarsened_r(ds: str):
+    """r of a coarsened data set from its name (None for other data sets)."""
+    if not ds.startswith("coarsened_") or "_r" not in ds:
+        return None
+    return float(ds.rsplit("_r", 1)[1].replace("p", "."))
+
+
 COARSENED = tuple(coarsened_name(b, r) for b in COARSEN_BASES for r in COARSEN_R)
+COARSENED_MORE = tuple(coarsened_name(b, r) for b, rs in COARSEN_MORE_LEVELS.items() for r in rs)
 RESPLIT = tuple(f"{p}_resplit" for p in RESPLIT_PARENTS)
 RESPLIT_CONTROLS = ("taxi_resplit",)
 
@@ -297,12 +338,54 @@ def cells_floor_convention(run, audit=None):
     return out
 
 
+def bounds_tag(arm, bound):
+    return f"{arm}_{bound}"
+
+
+def cells_component_bounds(run, audit):
+    """The five same-density treatments with lower bounds on the mixture components, GRU; the unbounded arm is the
+    rank_change run (same configs apart from the bounds)."""
+    out = []
+    for ds in filter(_keep, BOUNDS_DATASETS):
+        d = delta_of(audit, ds)
+        for bound, kw in BOUNDS.items():
+            for a in BOUNDS_ARMS:
+                for t in LRS:
+                    for s in REAL_SEEDS:
+                        c = cell("component_bounds", run, ds, a, s, t, d, tag=bounds_tag(a, bound))
+                        c.update(kw)
+                        out.append(c)
+    return out
+
+
+def cells_triangular_coarsened(run, audit):
+    return _real("triangular_coarsened", run, audit, COARSENED, ("triangular",), (GRU, TRF))
+
+
+def cells_triangular_jitter(run, audit):
+    sets = tuple(coarsened_name(b, r) for b in COARSEN_BASES for r in TRI_IW_R)
+    return (_real("triangular_jitter", run, audit, sets, TRI_IW_ARMS, (GRU, TRF))
+            + _synthetic("triangular_jitter", run, Syn.main_settings(), TRI_IW_ARMS, SMOOTH_SYN_SEEDS))
+
+
+def cells_coarsened_more(run, audit):
+    return _real("coarsened_more", run, audit, COARSENED_MORE, COARSEN_MORE_ARMS, (GRU, TRF))
+
+
+def cells_triangular_recorded(run, audit):
+    return (_real("triangular_recorded", run, audit, RANK_DATASETS, ("triangular",), (GRU, TRF))
+            + _real("triangular_recorded", run, audit, PROCESS_LOGS, ("triangular",), (TRF, GRU), marks=True))
+
+
 BUILDERS = {"synthetic": cells_synthetic, "rank_change": cells_rank_change, "intensity_heads": cells_intensity_heads,
             "process_logs": cells_process_logs, "delta_misspecification": cells_delta_misspecification,
             "iw_jitter": cells_iw_jitter, "iw_jitter_large": cells_iw_jitter_large,
             "inbin_smoothing": cells_inbin_smoothing, "inbin_smoothing_seeds": cells_inbin_smoothing_seeds,
             "marks": cells_marks, "coarsened_real": cells_coarsened_real, "resplit": cells_resplit,
-            "new_datasets": cells_new_datasets, "floor_convention": cells_floor_convention}
+            "new_datasets": cells_new_datasets, "floor_convention": cells_floor_convention,
+            "component_bounds": cells_component_bounds, "triangular_coarsened": cells_triangular_coarsened,
+            "triangular_jitter": cells_triangular_jitter, "coarsened_more": cells_coarsened_more,
+            "triangular_recorded": cells_triangular_recorded}
 NEEDS_AUDIT = set(BUILDERS) - {"synthetic", "iw_jitter_large", "floor_convention"}
 
 

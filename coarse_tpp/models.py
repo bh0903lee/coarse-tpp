@@ -101,15 +101,23 @@ class MixtureHead(nn.Module):
       bounded_mean   log b_k = l_b + (u_b - l_b) sigmoid(v_k / c), sigma_k = sig_min + (sig_max - sig_min)
                      sigmoid(u_k), mu_k = log a + log b_k - sigma_k^2 / 2 with a = train median gap, so every
                      component mean lies in [b_lo, b_hi]
+    Lower bounds of the standard head (the component-bounds experiment, Supplementary S4): ls_lo replaces the lower
+    end -5 of the log_scale clamp (sigma_k >= s e^ls_lo; the default -5 leaves the head unchanged) and mu_lo floors
+    the raw log-time location (value clamped, gradient passed through). Both are defined for `standard` only.
     """
 
     def __init__(self, d_in: int, K: int = 8, param: str = "standard", log_mean: float = 0.0, log_std: float = 1.0,
                  sig_max: float = 4.0, a: float | None = None, b_lo: float | None = None, b_hi: float | None = None,
-                 mean_pre_scale: float = 1.0):
+                 mean_pre_scale: float = 1.0, ls_lo: float = -5.0, mu_lo: float | None = None):
         super().__init__()
         if param not in MIX_PARAMS:
             raise ValueError(param)
         self.K, self.param = K, param
+        if (ls_lo != -5.0 or mu_lo is not None) and param != "standard":
+            raise ValueError("ls_lo / mu_lo are defined for the standard parameterization")
+        if ls_lo >= 3.0:
+            raise ValueError(f"ls_lo {ls_lo} must be below the upper clamp 3.0")
+        self.ls_lo, self.mu_lo = float(ls_lo), (None if mu_lo is None else float(mu_lo))
         self.linear = nn.Linear(d_in, 3 * K)
         self.ls_hi = 3.0 if param == "standard" else min(3.0, math.log(sig_max) - math.log(log_std))
         if param == "sigma_cap" and self.ls_hi <= -5.0:
@@ -141,10 +149,12 @@ class MixtureHead(nn.Module):
         loc = out[..., :K]
         log_w = F.log_softmax(out[..., 2 * K:], dim=-1)
         mu = self.m + self.s * loc
+        if self.mu_lo is not None:
+            mu = clamp_preserve_gradients(mu, self.mu_lo, float("inf"))
         if self.param == "sigma_sigmoid":
             log_sigma = torch.log(self.sig_min + (self.sig_max - self.sig_min) * torch.sigmoid(out[..., K:2 * K]))
         else:
-            log_sigma = torch.log(self.s) + clamp_preserve_gradients(out[..., K:2 * K], -5.0, self.ls_hi)
+            log_sigma = torch.log(self.s) + clamp_preserve_gradients(out[..., K:2 * K], self.ls_lo, self.ls_hi)
         return log_w, mu, log_sigma
 
 
@@ -193,11 +203,26 @@ class Model(nn.Module):
         return law, tl
 
 
+def component_bounds(cfg: dict, stats) -> dict:
+    """Lower bounds of the mixture head from the cell config, in data units: sigma_min (raw log-time scale) becomes
+    the log_scale clamp ls_lo = log(sigma_min / s); mu_min is the floor of the raw log-time location. Absent keys: no
+    change (the head is bit-identical to the unbounded one)."""
+    out = {}
+    if cfg.get("sigma_min") is not None:
+        out["ls_lo"] = math.log(float(cfg["sigma_min"])) - math.log(float(stats.log_std))
+    if cfg.get("mu_min") is not None:
+        out["mu_lo"] = float(cfg["mu_min"])
+    if out and (cfg["head"] != "mix" or cfg.get("mix_param", "standard") != "standard"):
+        raise ValueError("sigma_min / mu_min are defined for the standard mixture head")
+    return out
+
+
 def mix_kwargs(cfg: dict, stats) -> dict:
-    """Keyword arguments of the mixture-head parameterization named in cfg["mix_param"]."""
+    """Keyword arguments of the mixture-head parameterization named in cfg["mix_param"], plus the lower bounds."""
     p = cfg.get("mix_param", "standard")
+    cb = component_bounds(cfg, stats)            # raises when bounds are given for another parameterization
     if p == "standard":
-        return {}
+        return cb
     kw = dict(sig_max=float(cfg.get("sig_max", 4.0)))
     if p == "bounded_mean":
         floor = 1e-6
@@ -222,6 +247,8 @@ def build(cfg: dict, stats, n_types: int = 1) -> Model:
         raise ValueError(kind)
     if cfg.get("mark_head") and not marks:
         raise ValueError("mark_head needs encoder.marks = true (the mark history is the input of the mark law)")
+    if cfg["head"] != "mix" and (cfg.get("sigma_min") is not None or cfg.get("mu_min") is not None):
+        raise ValueError("sigma_min / mu_min are defined for the standard mixture head")
     return Model(e, cfg["head"], e.d_out, stats, K=cfg.get("K", 8), tie=cfg["treatment"] == "point_mass",
                  mark_types=n_types if cfg.get("mark_head") else None, mix_param=cfg.get("mix_param", "standard"),
                  mix_kwargs=mix_kwargs(cfg, stats) if cfg["head"] == "mix" else None)

@@ -42,7 +42,7 @@ def cfg_of(tmp, ds, arm, delta, **kw):
 
 
 @pytest.mark.parametrize("arm", ["interval", "point_mass", "jitter_time", "triangular", "iw_jitter_S2",
-                                 "interval_jitter_mix_0.5", "floor_1e-10"])
+                                 "iw_jitter_triangular_S2", "interval_jitter_mix_0.5", "floor_1e-10"])
 def test_synthetic_cell_trains_and_scores(datadir, tmp_path, arm):
     c = cfg_of(tmp_path, "synth_SC_r1_d1p0", arm, 1.0)
     res = TR.run(c)
@@ -99,6 +99,50 @@ def test_iw_jitter_objective_limits():
     assert float((big - ivl).abs().max()) < 0.02
 
 
+def test_triangular_jitter_objective_limits():
+    """S -> inf: the multi-sample triangular jitter increases to the triangular likelihood (Jensen; it stays below).
+    Ties draw from the kernel restricted to tau >= 0 with mass delta / 2."""
+    law = lik.LogNormMix(torch.log(torch.tensor([0.5, 0.5], dtype=torch.float64)).expand(50, 2),
+                         torch.tensor([-1.0, 1.0], dtype=torch.float64).expand(50, 2),
+                         torch.tensor([-0.5, 0.0], dtype=torch.float64).expand(50, 2))
+    tau = torch.arange(50, dtype=torch.float64) * 0.3
+    tau[:5] = 0.0
+    tri = lik.event_loglik(law, tau, "triangular", delta=0.3)
+    big = TR.train_ll(law, None, tau, dict(treatment="iw_jitter_triangular", delta_model=0.3, iw_samples=20000),
+                      torch.Generator().manual_seed(1))
+    assert float((big - tri).abs().max()) < 0.03
+    small = TR.train_ll(law, None, tau, dict(treatment="iw_jitter_triangular", delta_model=0.3, iw_samples=4),
+                        torch.Generator().manual_seed(1))
+    assert float(small.mean()) < float(tri.mean())
+    w, lm = D.jitter_targets_triangular_multi(tau, 0.3, 1000, torch.Generator().manual_seed(2))
+    assert w.shape == (1000, 50) and (w >= 0).all() and (w[:, 5:] - tau[5:]).abs().max() < 0.3 and w[:, :5].max() < 0.3
+    assert torch.allclose(lm[:5], torch.full((5,), math.log(0.15), dtype=torch.float64)) and torch.allclose(lm[5:], torch.full((45,), math.log(0.3), dtype=torch.float64))
+
+
+def test_component_bounds_of_the_mixture_head(datadir):
+    """sigma_min / mu_min bound the components; without them the head is unchanged."""
+    from coarse_tpp.models import build
+    v = D.load("toy", "train")
+    st = D.coarse_stats(v, 1.0)
+    base = dict(encoder=dict(type="gru", d_model=16), head="mix", K=4, treatment="interval", delta=1.0, delta_model=1.0)
+    b = D.make_batch(v.coarse, np.arange(6), "cpu")
+    torch.manual_seed(0); m0 = build(base, st, 3)
+    torch.manual_seed(0); m1 = build(dict(base, sigma_min=2.0, mu_min=math.log(1e-4)), st, 3)
+    law0, _ = m0(b, st); law1, _ = m1(b, st)
+    assert (law1.sigma >= 2.0 * (1 - 1e-5)).all() and (law1.mu >= math.log(1e-4) - 1e-5).all()   # float32 head outputs
+    assert not (law0.sigma >= 2.0).all()                                 # the unbounded head does go below the bound
+    torch.manual_seed(0); m2 = build(dict(base, sigma_min=None), st, 3)
+    assert torch.equal(m2(b, st)[0].log_sigma, law0.log_sigma)
+    with pytest.raises(ValueError):
+        build(dict(base, head="rmtpp", sigma_min=2.0), st, 3)
+    with pytest.raises(ValueError):
+        build(dict(base, mix_param="sigma_sigmoid", mu_min=0.0), st, 3)
+    # bounded values still receive a gradient (clamp with gradient pass-through)
+    loss = -(TR.train_ll(law1, None, b.iet[:, 1:], base) * b.tmask.double()).sum()
+    loss.backward()
+    assert float(m1.head.linear.weight.grad.abs().sum()) > 0
+
+
 def test_runner_runs_a_grid_and_skips_finished_cells(datadir, tmp_path):
     run = tmp_path / "grid"
     cs = [cfg_of(run, "synth_SC_r1_d1p0", a, 1.0) for a in ("interval", "jitter_gap")]
@@ -127,6 +171,7 @@ def test_latent_score_of_coarsened_data(datadir, tmp_path):
         (datadir / "conttime").mkdir(exist_ok=True)
         pickle.dump({sp: seqs, "dim_process": 1}, open(datadir / "conttime" / f"{sp}.pkl", "wb"))
     row = coarsen.coarsen(datadir, "conttime", 1.0)
+    assert X.coarsened_r(row["dataset"]) == 1.0 and X.coarsened_r("retweet") is None
     run = tmp_path / "coarse"
     cs = [cfg_of(run, row["dataset"], a, row["delta"]) for a in ("interval", "jitter_time")]
     for c in cs:
@@ -136,6 +181,42 @@ def test_latent_score_of_coarsened_data(datadir, tmp_path):
     latent_score.main([str(run)])
     rows = [json.loads(x) for x in (run / "latent_scores.jsonl").read_text().splitlines()]
     assert len(rows) == 2 and not any(r["mismatch"] for r in rows) and all(math.isfinite(r["test"]["B"]) for r in rows)
+    r = {x["arm"]: x for x in rows}
+    assert r["interval"]["rule"] == "raw" and r["interval"]["alt_rule"] == "smooth" and r["jitter_time"]["alt_rule"] == "raw"
+    assert all(math.isfinite(x["test"]["B_alt"]) and math.isfinite(x["dev"]["B_alt"]) for x in rows)
+    assert r["interval"]["test"]["B_alt"] != r["interval"]["test"]["B"]
+    # synthetic data carry the latent times too
+    run2 = tmp_path / "syn"
+    c = cfg_of(run2, "synth_SC_r1_d1p0", "triangular", 1.0)
+    c["out_dir"] = str((run2 / "cells" / c["cell_id"]).resolve())
+    res = TR.run(c)
+    X.write("inbin_smoothing", run2, cells=[c])
+    latent_score.main([str(run2)])
+    rows = [json.loads(x) for x in (run2 / "latent_scores.jsonl").read_text().splitlines()]
+    assert len(rows) == 1 and not rows[0]["mismatch"] and abs(rows[0]["test"]["B"] - res["test"]["B"]) < 1e-6
+
+
+def test_storage_tick_rule(datadir):
+    from coarse_tpp.prepare import coarsen
+    rng = np.random.default_rng(5)
+    assert coarsen.storage_tick(rng.exponential(1.0, 5000)) is None             # continuous times: no grain
+    grid = np.round(rng.exponential(1.0, 5000) / 1e-4) * 1e-4
+    grid = grid[grid > 0]
+    assert coarsen.storage_tick(grid) == pytest.approx(1e-4)
+    # a base stored on a 0.5 grain: r = 1 (delta ~ 1) is below ten grains and refused, as the fixed rule says
+    for sp, k in (("train", 20), ("dev", 5), ("test", 5)):
+        seqs = []
+        for _ in range(k):
+            g = np.round(rng.exponential(1.0, 30) / 0.5) * 0.5 + 0.5
+            t = np.cumsum(g); t -= t[0]
+            seqs.append([dict(time_since_start=float(a), time_since_last_event=float(max(b, 1e-6)), type_event=0)
+                         for a, b in zip(t, np.diff(t, prepend=0.0))])
+        (datadir / "ticked").mkdir(exist_ok=True)
+        pickle.dump({sp: seqs, "dim_process": 1}, open(datadir / "ticked" / f"{sp}.pkl", "wb"))
+    with pytest.raises(SystemExit):
+        coarsen.coarsen_more(datadir, "ticked", (1.0,))
+    rows = coarsen.coarsen_more(datadir, "ticked", (10.0,))
+    assert len(rows) == 1 and rows[0]["storage_tick"] == pytest.approx(0.5) and (datadir / rows[0]["dataset"] / "resolution.json").exists()
 
 
 @pytest.mark.parametrize("arm", ["interval", "point_mass"])

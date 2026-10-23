@@ -50,8 +50,24 @@ def test_delta0_scores():
 
 def test_rules_of_the_treatments():
     assert Ro.RULE["interval"] == Ro.RULE["jitter_gap"] == Ro.RULE["iw_jitter"] == Ro.RULE["interval_jitter_mix"] == "raw"
-    assert Ro.RULE["jitter_time"] == Ro.RULE["jitter_time_gauss"] == Ro.RULE["triangular"] == "smooth"
+    assert Ro.RULE["jitter_time"] == Ro.RULE["jitter_time_gauss"] == Ro.RULE["triangular"] == Ro.RULE["iw_jitter_triangular"] == "smooth"
     assert Ro.RULE["point_mass"] == "point_mass"
+
+
+def test_alternative_readouts():
+    """ALT swaps raw and smooth; the point-mass alternative is the density part (1 - pi) q(s) and integrates to 1 - pi."""
+    law, tl, d = law1(), T(0.4), 0.3
+    s = T(0.05, 0.4, 2.0)
+    assert Ro.ALT == {"raw": "smooth", "smooth": "raw", "point_mass": "point_mass_raw"}
+    assert torch.equal(Ro.B(law, tl, s, d, Ro.ALT["smooth"]), Ro.B(law, tl, s, d, "raw"))
+    assert torch.equal(Ro.B(law, tl, s, d, Ro.ALT["raw"]), Ro.B(law, tl, s, d, "smooth"))
+    alt = Ro.B(law, tl, s, d, "point_mass_raw")
+    assert torch.allclose(alt, F.logsigmoid(-tl) + law.log_density(s))
+    f = lambda x: float(Ro.B(law, tl, T(x), d, "point_mass_raw").exp())
+    tot = integrate.quad(f, 0, 50, limit=500)[0] + integrate.quad(f, 50, np.inf, limit=200)[0]
+    assert abs(tot - float(torch.sigmoid(-tl))) < 2e-3
+    with pytest.raises(ValueError):
+        Ro.B(law, tl, s, d, "nonsense")
 
 
 def test_tie_mask_follows_the_score():

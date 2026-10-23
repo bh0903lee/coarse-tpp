@@ -13,12 +13,14 @@ is also read as a tie (in the paper's data, one gap in ContTime and two in Earth
 genuine millisecond gaps (1 ms = 2.8e-7 h), so the mapping is not applied to them (`stores_floor`).
 
 Jitter: jitter_gap adds U(0, delta) to the target gaps only; jitter_time / jitter_time_gauss perturb the recorded
-times of the window (inputs and targets), re-sort them and recompute the gaps.
+times of the window (inputs and targets), re-sort them and recompute the gaps; iw_jitter_triangular draws the target
+gap from the triangular kernel of its cell (inputs unchanged).
 
 DATA_DIR is the environment variable COARSE_TPP_DATA, or ./data of the repository.
 """
 from __future__ import annotations
 
+import math
 import os
 import pickle
 import sys
@@ -243,6 +245,23 @@ def jitter_targets_uniform_multi(tau: torch.Tensor, delta: float, S: int, gen: t
     S = 1 consumes the generator exactly as jitter_targets_uniform does (same draw)."""
     u = torch.rand((int(S),) + tuple(tau.shape), generator=gen, dtype=torch.float64).to(tau.device)
     return tau.double().unsqueeze(0) + delta * u
+
+
+def jitter_targets_triangular_multi(tau: torch.Tensor, delta: float, S: int, gen: torch.Generator):
+    """iw_jitter_triangular: S draws from the triangular kernel of each recorded gap, the law of the latent gap tau
+    given tau~ = k delta when both end points sit at independent uniform positions in their cells: w = k delta +
+    delta (u - v), and w = delta |u - v| for a tie (the kernel restricted to tau >= 0). Returns (w, log_mass), w of
+    shape (S, *tau.shape) and log_mass = log of the kernel integral (log delta, or log(delta / 2) for a tie), so
+    that log_mass + log mean_s q(w_s) is unbiased inside the log for the triangular likelihood (lik.tri_loglik)."""
+    shape = (int(S),) + tuple(tau.shape)
+    u = torch.rand(shape, generator=gen, dtype=torch.float64).to(tau.device)
+    v = torch.rand(shape, generator=gen, dtype=torch.float64).to(tau.device)
+    t = tau.double().unsqueeze(0)
+    tie = t <= 0
+    w = torch.where(tie, delta * (u - v).abs(), t + delta * (u - v))
+    log_mass = torch.where(tau.double() <= 0, torch.full_like(tau.double(), math.log(delta / 2)),
+                           torch.full_like(tau.double(), math.log(delta)))
+    return w, log_mass
 
 
 def coarse_stats(views: Views, delta: float) -> Stats:

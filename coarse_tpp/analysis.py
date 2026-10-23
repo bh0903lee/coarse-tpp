@@ -587,8 +587,30 @@ def report_marks(run, audit):
     return L, dict(finished=st["finished"])
 
 
-def report_coarsened(run, audit, latent=None):
-    L, summ = report_real(run, "Coarsened real data", X.COARSEN_ARMS, audit)
+def latent_rows(paths):
+    """Non-mismatching rows of the latent_scores.jsonl files of several runs, as result-like dicts keyed by
+    (dataset, encoder, arm, lr_tag, seed); by_selection.C holds dev_criterion, test {B, B_alt, C} and dev {B, B_alt}."""
+    out = {}
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        for line in p.read_text().splitlines():
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            if r.get("mismatch"):
+                continue
+            c = r["config"]
+            key = (c["dataset"], c["encoder"]["type"], r["arm"], c["lr_tag"], r["seed"])
+            out[key] = dict(config=dict(dataset=c["dataset"], encoder=c["encoder"], head=c["head"], K=c["K"], lr_tag=c["lr_tag"]),
+                            seed=r["seed"], arm=r["arm"], wall_sec=r.get("wall_sec"),
+                            by_selection={"C": {"dev_criterion": r["dev_crit"], "test": r["test"], "dev": r["dev"]}})
+    return out
+
+
+def report_coarsened(run, audit, latent=None, datasets=X.COARSENED, arms=X.COARSEN_ARMS):
+    L, summ = report_real(run, "Coarsened real data", arms, audit)
     p = Path(latent) if latent else Path(run) / "latent_scores.jsonl"
     if not p.exists():
         L += ["", f"Latent-time scores: run `python -m coarse_tpp.latent_score {run}` to add the B tables."]
@@ -598,24 +620,329 @@ def report_coarsened(run, audit, latent=None):
                  by_selection={"C": {"dev_criterion": r["dev_crit"], "test": dict(B=r["test"]["B"], C=r["test"]["C"])}})
             for r in rows if not r["mismatch"]]
     units = select_lr(good)
+    others = [a for a in arms if a not in ("interval", "floor_1e-6", "floor_1e-5")]
     L += ["", f"## Latent-time score B ({len(good)} of {len(rows)} cells reproduce their stored C)", ""]
     for enc in ("gru", "transformer"):
-        L += [f"### {enc}", "", "| data set | B interval | - floor 1e-10 | - jitter_gap | - jitter_time | - point_mass |",
-              "|---|---:|---|---|---|---|"]
-        for ds in X.COARSENED:
+        L += [f"### {enc}", "", "| data set | B interval | " + " | ".join(f"- {b}" for b in others) + " |",
+              "|---|---:|" + "---|" * len(others)]
+        for ds in datasets:
             g = (ds, enc, "mix", 8)
             if g + ("interval",) not in units:
                 continue
-            cols = [lo_str(paired(units, g + ("interval",), g + (b,), "B"), MIN_SEEDS)[0]
-                    for b in ("floor_1e-10", "jitter_gap", "jitter_time", "point_mass")]
+            cols = [lo_str(paired(units, g + ("interval",), g + (b,), "B"), MIN_SEEDS)[0] for b in others]
             L.append(f"| {ds} | {fmt(mean_key(units[g + ('interval',)], 'B'))} | " + " | ".join(cols) + " |")
         L.append("")
     return L, summ
 
 
+# ------------------------------------------------------------------ triangular kernel (Supplementary S4)
+TRI_BASE = ("floor_1e-10", "floor_1e-6", "jitter_gap", "jitter_time", "point_mass", "interval")
+BETTER_MEAN, LOSS_C = 0.01, -0.005
+PENDING = "pending"
+
+
+def better(d):
+    """One-sided 95% lower bound > 0 and mean >= BETTER_MEAN (n >= 2)."""
+    if not d or len(d) < 2:
+        return False
+    m, lo, _ = t_one_sided(d)
+    return bool(lo > 0 and m >= BETTER_MEAN)
+
+
+def tstat(d):
+    if not d:
+        return None
+    m, lo, _ = t_one_sided(d)
+    return dict(mean=float(m), lower=float(lo) if math.isfinite(lo) else None, n=len(d))
+
+
+def fmt_d(d):
+    s = tstat(d)
+    if not s:
+        return "—", "—", ""
+    return fmt(s["mean"]), fmt(s["lower"]) if s["lower"] is not None else "—", "**yes**" if better(d) else ""
+
+
+def dev_val(seeds: dict, key: str) -> float:
+    return float(np.mean([x["by_selection"]["C"]["dev"][key] for x in seeds.values()]))
+
+
+def unit_select(cells, ds, enc, arms, seeds, lrs=tuple(X.LRS)):
+    """{arm: {seed: result}} at the dev-C lr chosen on `seeds`, or (None, missing (arm, lr, seed) list)."""
+    missing = [(a, lr, s) for a in arms for lr in lrs for s in seeds if (ds, enc, a, lr, s) not in cells]
+    if missing:
+        return None, missing
+    out = {}
+    for a in arms:
+        best = max(lrs, key=lambda lr: np.mean([cells[(ds, enc, a, lr, s)]["by_selection"]["C"]["dev_criterion"] for s in seeds]))
+        out[a] = {s: cells[(ds, enc, a, best, s)] for s in seeds}
+    return out, []
+
+
+def best_readout(sel, arms=TRI_BASE):
+    """(treatment, key): per treatment the readout (B or B_alt) with the higher dev mean, then the treatment with the
+    highest dev value under its readout."""
+    cand = []
+    for a in arms:
+        k = max(("B", "B_alt"), key=lambda key: dev_val(sel[a], key))
+        cand.append((dev_val(sel[a], k), a, k))
+    _, a, k = max(cand)
+    return a, k
+
+
+def diff(sel, a, b, ka="B", kb="B"):
+    seeds = sorted(set(sel[a]) & set(sel[b]))
+    return [val(sel[a][s], ka) - val(sel[b][s], kb) for s in seeds]
+
+
+def syn_units(cells):
+    """{(proc, delta): {realization data set: {arm: {seed: result}}}}, lr per (data set, arm) by dev C over the arm's seeds."""
+    by = {}
+    for (ds, enc, arm, lr, s), r in cells.items():
+        if Syn.parse(ds):
+            by.setdefault(ds, {}).setdefault(arm, {}).setdefault(lr, {})[s] = r
+    out = {}
+    for ds, arms in by.items():
+        proc, _, d = Syn.parse(ds)
+        sel = {}
+        for a, lrs in arms.items():
+            best = max(lrs, key=lambda lr: np.mean([x["by_selection"]["C"]["dev_criterion"] for x in lrs[lr].values()]))
+            sel[a] = lrs[best]
+        out.setdefault((proc, d), {})[ds] = sel
+    return out
+
+
+def diff_syn(real, a, b=None, ka="B", kb="B", use_best=False):
+    """Per realization the mean over common seeds of a - b (b = the best-readout baseline when use_best); returns
+    (list over realizations, realizations skipped)."""
+    out, skipped = [], 0
+    for ds, sel in sorted(real.items()):
+        if a not in sel:
+            skipped += 1; continue
+        if use_best:
+            if not all(x in sel for x in TRI_BASE):
+                skipped += 1; continue
+            common_all = set.intersection(*(set(sel[x]) for x in TRI_BASE + (a,)))
+            if not common_all:
+                skipped += 1; continue
+            bb, kbb = best_readout({x: {s: sel[x][s] for s in common_all} for x in TRI_BASE})
+        else:
+            bb, kbb = b, kb
+        if bb not in sel:
+            skipped += 1; continue
+        common = sorted(set(sel[a]) & set(sel[bb]))
+        if not common:
+            skipped += 1; continue
+        out.append(float(np.mean([val(sel[a][s], ka) for s in common]) - np.mean([val(sel[bb][s], kbb) for s in common])))
+    return out, skipped
+
+
+def cost_table(cells, ref_arm="jitter_gap"):
+    """Median and quartiles of wall(arm) / wall(ref_arm) over matched (data set, encoder, lr, seed) cells."""
+    ref = {(ds, enc, lr, s): r["wall_sec"] for (ds, enc, a, lr, s), r in cells.items() if a == ref_arm and r.get("wall_sec")}
+    ratios = {}
+    for (ds, enc, a, lr, s), r in cells.items():
+        k = (ds, enc, lr, s)
+        if a != ref_arm and r.get("wall_sec") and k in ref:
+            ratios.setdefault(a, []).append(r["wall_sec"] / ref[k])
+    if not ratios:
+        return ["(no matched cells)"]
+    L = ["| arm | matched cells | median ratio | 25% | 75% |", "|---|---:|---:|---:|---:|"]
+    for a, v in sorted(ratios.items()):
+        q = np.quantile(v, [0.25, 0.5, 0.75])
+        L.append(f"| {a} | {len(v)} | {q[1]:.2f} | {q[0]:.2f} | {q[2]:.2f} |")
+    return L
+
+
+def triangular_c_table(runs, seeds=X.REAL_SEEDS):
+    """Test C of the triangular objective against interval and jitter_gap on every (data set, encoder) that has a
+    triangular cell in `runs` (result.json values; no loss = one-sided lower bound >= LOSS_C against both)."""
+    cells = {}
+    for run in runs:
+        if not (Path(run) / "grid.jsonl").exists():
+            continue
+        for x in load_cells(Path(run)):
+            if x["arm"] in ("triangular", "interval", "jitter_gap"):
+                c = x["config"]
+                cells[(c["dataset"], c["encoder"]["type"], x["arm"], c["lr_tag"], x["seed"])] = x
+    units = sorted({(ds, enc) for (ds, enc, a, lr, s) in cells if a == "triangular"})
+    L = ["| data set | encoder | test ties | n | triangular - interval | lower | triangular - jitter_gap | lower | no loss |",
+         "|---|---|---:|---:|---:|---:|---:|---:|---|"]
+    status, n_ok = (True if units else PENDING), 0
+    for ds, enc in units:
+        sel, missing = unit_select(cells, ds, enc, ("triangular", "interval", "jitter_gap"), seeds)
+        if sel is None:
+            L.append(f"| {ds} | {enc} | — | — | pending: {len(missing)} missing, e.g. {missing[:3]} |")
+            status = PENDING if status is not False else False
+            continue
+        d1, d2 = diff(sel, "triangular", "interval", "C", "C"), diff(sel, "triangular", "jitter_gap", "C", "C")
+        s1, s2 = tstat(d1), tstat(d2)
+        tie = float(np.mean([x["test"]["tie_share"] for x in sel["triangular"].values()]))
+        nl = bool(s1["lower"] is not None and s2["lower"] is not None and s1["lower"] >= LOSS_C and s2["lower"] >= LOSS_C)
+        n_ok += nl
+        if not nl:
+            status = False
+        L.append(f"| {ds} | {enc} | {tie:.3f} | {s1['n']} | {fmt(s1['mean'])} | {fmt(s1['lower'])} | {fmt(s2['mean'])} | "
+                 f"{fmt(s2['lower'])} | {'yes' if nl else '**no**'} |")
+    L.append(f"\nNo loss on {n_ok}/{len(units)} combinations.")
+    return status, L, n_ok, len(units)
+
+
+def report_triangular(run, bases=(), seeds=X.REAL_SEEDS):
+    """Triangular-kernel objective against the other treatments on the latent-time score B (coarsened data, both
+    readouts, from the latent_scores.jsonl files of `run` and `bases`), on B of the synthetic settings, and on C of the
+    recorded data (result.json of the runs). The decision rule was fixed before the runs (Supplementary S4)."""
+    runs = [Path(run)] + [Path(b) for b in bases]
+    cells = latent_rows([r / "latent_scores.jsonl" for r in runs])
+    tri_units = sorted({(ds, enc) for (ds, enc, a, lr, s) in cells if a == "triangular" and ds.startswith("coarsened_")})
+    L = ["# Triangular-kernel likelihood against the other treatments", "",
+         "Exploratory comparison (Supplementary S4). B = log q_B(s) of the latent time since the last record, on the test "
+         "split; learning rate per unit by dev C on the common seed set; real units seed-paired, synthetic settings paired "
+         "over realizations. better = one-sided 95% lower bound > 0 and mean >= 0.01 nats. jitter_time shares the smoothed "
+         "readout but also jitters the inputs; iw_jitter_triangular keeps the recorded inputs.",
+         f"Latent scores read from: {', '.join(str(r) for r in runs if (r / 'latent_scores.jsonl').exists())}; "
+         f"{len(cells)} cells without mismatch.", ""]
+    summary = dict(real=[], syn=[])
+    L += ["## 1. Coarsened real data", "",
+          "| data set | r | encoder | n | B triangular | B jitter_time | - jitter_time | lower | better | best readout | - best | lower | better | "
+          "- jitter_gap | - interval | " + " | ".join(f"- {s}" for s in X.TRI_IW_ARMS) + " |",
+          "|---|---:|---|---:|---:|---:|---:|---:|---|---|---:|---:|---|---:|---:|" + "---:|" * len(X.TRI_IW_ARMS)]
+    for ds, enc in tri_units:
+        r = X.coarsened_r(ds)
+        sel, missing = unit_select(cells, ds, enc, ("triangular",) + TRI_BASE, seeds)
+        if sel is None:
+            L.append(f"| {ds} | {r} | {enc} | pending: {len(missing)} missing cells, e.g. {missing[:3]} |")
+            summary["real"].append(dict(dataset=ds, r=r, encoder=enc, status=PENDING, n_missing=len(missing)))
+            continue
+        da = diff(sel, "triangular", "jitter_time")
+        br = best_readout(sel)
+        db = diff(sel, "triangular", br[0], "B", br[1])
+        dj, dg = diff(sel, "triangular", "jitter_gap"), diff(sel, "triangular", "interval")
+        tiw = []
+        for s in X.TRI_IW_ARMS:
+            ts, _ = unit_select(cells, ds, enc, (s,), seeds)
+            tiw.append(fmt_d(diff({**sel, **ts}, "triangular", s))[0] if ts else "—")
+        ma, la, ba = fmt_d(da); mb, lb, bb = fmt_d(db)
+        mean_b = lambda a: fmt(float(np.mean([val(x, "B") for x in sel[a].values()])))
+        L.append(f"| {ds} | {r} | {enc} | {len(da)} | {mean_b('triangular')} | {mean_b('jitter_time')} | {ma} | {la} | {ba} | "
+                 f"{br[0]} ({br[1]}) | {mb} | {lb} | {bb} | {fmt_d(dj)[0]} | {fmt_d(dg)[0]} | " + " | ".join(tiw) + " |")
+        summary["real"].append(dict(dataset=ds, r=r, encoder=enc, status="complete", a=better(da), b=better(db),
+                                    a_stat=tstat(da), b_stat=tstat(db), baseline=list(br)))
+    syn = syn_units(cells)
+    L += ["", "## 2. Synthetic main settings (paired over realizations; seeds common to both arms)", "",
+          "| process | delta | - jitter_time (n) | lower | better | - best readout (n) | lower | better | - jitter_gap | - interval | " +
+          " | ".join(f"- {s}" for s in X.TRI_IW_ARMS) + " | realizations skipped (a / b) |",
+          "|---|---:|---:|---:|---|---:|---:|---|---:|---:|" + "---:|" * len(X.TRI_IW_ARMS) + "---|"]
+    for st in sorted(syn):
+        real = syn[st]
+        da, sa = diff_syn(real, "triangular", "jitter_time")
+        db, sb = diff_syn(real, "triangular", use_best=True)
+        ma, la, ba = fmt_d(da); mb, lb, bb = fmt_d(db)
+        L.append(f"| {st[0]} | {st[1]} | {ma} ({len(da)}) | {la} | {ba} | {mb} ({len(db)}) | {lb} | {bb} | "
+                 f"{fmt_d(diff_syn(real, 'triangular', 'jitter_gap')[0])[0]} | {fmt_d(diff_syn(real, 'triangular', 'interval')[0])[0]} | " +
+                 " | ".join(fmt_d(diff_syn(real, "triangular", s)[0])[0] for s in X.TRI_IW_ARMS) + f" | {sa} / {sb} |")
+        summary["syn"].append(dict(process=st[0], delta=st[1], a=better(da), b=better(db), a_stat=tstat(da), b_stat=tstat(db)))
+    L += ["", f"## 3. Recorded data: test C of triangular against interval and jitter_gap (no loss = lower bound >= {LOSS_C})", ""]
+    noloss, rows, n_ok, n_units = triangular_c_table(runs, seeds)
+    L += rows
+    L += ["", "## 4. Training time, matched cells (same data set, encoder, lr, seed): ratio to jitter_gap", ""] + cost_table(cells)
+    elig = [x for x in summary["real"] if (x["r"] or 0) >= 0.3]
+    pend = [x for x in elig if x["status"] == PENDING]
+    comp = [x for x in elig if x["status"] == "complete"]
+    n_a = sum(bool(x["a"]) for x in comp)
+    n_both = sum(bool(x["a"] and x["b"]) for x in comp)
+    need = math.ceil(2 * len(elig) / 3) if elig else None
+    if noloss is False or (comp and not pend and noloss is True and n_both < need):
+        verdict = False
+    elif not elig or pend or noloss == PENDING:
+        verdict = PENDING
+    else:
+        verdict = bool(n_both >= need and noloss is True)
+    L += ["", "## 5. Decision rule (fixed before the runs)", "",
+          f"coarsened units with r >= 0.3: {len(elig)} (complete {len(comp)}, pending {len(pend)}); better than jitter_time: {n_a}; "
+          f"better than jitter_time AND than the best-readout baseline: {n_both} (needed: {need}); recorded-data C without loss on "
+          f"every combination: {noloss} ({n_ok}/{n_units})", f"**condition met: {verdict}**"]
+    summary.update(verdict=verdict, n_eligible=len(elig), n_pending=len(pend), n_better_a=n_a, n_both_better=n_both, needed=need,
+                   c_noloss=noloss, c_noloss_count=[n_ok, n_units])
+    return L, summary
+
+
+# ------------------------------------------------------------------ component bounds (Supplementary S4)
+BOUND_ARMS = ("none",) + tuple(X.BOUNDS)
+FLOOR_KEYS = tuple(X.FLOOR_ARMS)
+
+
+def bound_arm(treatment, bound):
+    return treatment if bound == "none" else X.bounds_tag(treatment, bound)
+
+
+def report_component_bounds(run, bases=(), seeds=X.REAL_SEEDS):
+    """Per data set and bound {none (the rank_change run), sigma_k >= 2, mu_k >= log 1e-4, both}: the self-preference
+    margin of each floor-trained model (its test floor score minus the best of the other four same-density treatments,
+    with tie / non-tie contributions), the floor spread of each floor-trained model, the top treatment under each
+    floor and under C, Kendall's tau between the floor 1e-6 and C rankings, and the seed-paired change in test C of
+    every treatment against the unbounded arm. Learning rates by dev C on the seeds common to every arm and treatment
+    of the data set (GRU only)."""
+    cells = {}
+    for r in [Path(run)] + [Path(b) for b in bases]:
+        if not (r / "grid.jsonl").exists():
+            continue
+        for x in load_cells(r):
+            c = x["config"]
+            if c["encoder"]["type"] == "gru" and c["head"] == "mix":
+                cells[(c["dataset"], "gru", x["arm"], c["lr_tag"], x["seed"])] = x
+    datasets = sorted({ds for (ds, enc, a, lr, s) in cells if a in {X.bounds_tag(t, b) for t in X.BOUNDS_ARMS for b in X.BOUNDS}})
+    L = ["# Component bounds: width / location intervention on the floor's self-preference", "",
+         "Exploratory (Supplementary S4). Learning rate per (bound, treatment) by dev C on the seed set common to all arms and "
+         "treatments of the data set; seed means. Margin at a floor = test floor score of the model trained with that floor "
+         "minus the best of the other four same-density treatments (nats per event; tie + non-tie contributions per scored "
+         "event). The unbounded arm is the rank_change run (pass it with --base).", ""]
+    summary = {}
+    if not datasets:
+        L.append("no component_bounds cells: pending")
+    for ds in datasets:
+        arms_all = [bound_arm(m, b) for b in BOUND_ARMS for m in X.BOUNDS_ARMS]
+        common = [s for s in seeds if all((ds, "gru", x, lr, s) in cells for x in arms_all for lr in X.LRS)]
+        L += [f"## {ds}", "", f"common seeds: {common} (of {list(seeds)})", ""]
+        if len(common) < len(seeds):
+            miss = [(x, lr, s) for x in arms_all for lr in X.LRS for s in seeds if (ds, "gru", x, lr, s) not in cells]
+            L += [f"pending: {len(miss)} missing cells, e.g. {miss[:4]}", ""]
+            summary[ds] = PENDING
+            continue
+        sel, _ = unit_select(cells, ds, "gru", arms_all, common)
+        L += ["| bound | " + " | ".join(f"margin {f} (tie + non-tie)" for f in FLOOR_KEYS) +
+              " | floor spread of the three floor-trained models | top by " + " / ".join(FLOOR_KEYS) + " / C | Kendall tau (floor 1e-6, C) | "
+              "C change vs none (seed-paired mean, per treatment) |", "|---|---|---|---|---|---|---:|---|"]
+        out = {}
+        for bound in BOUND_ARMS:
+            us = {m: sel[bound_arm(m, bound)] for m in X.BOUNDS_ARMS}
+            mean = lambda m, key: float(np.mean([val(x, key) for x in us[m].values()]))
+            tie = float(np.mean([x["test"]["tie_share"] for x in us["floor_1e-6"].values()]))
+            cols, margins = [], {}
+            for f in FLOOR_KEYS:
+                own = mean(f, f)
+                bo = max((m for m in X.BOUNDS_ARMS if m != f), key=lambda m: mean(m, f))
+                mg = own - mean(bo, f)
+                tie_c = tie * (mean(f, f + "_tie") - mean(bo, f + "_tie"))
+                margins[f] = dict(total=mg, tie=tie_c, nontie=mg - tie_c, best_other=bo)
+                cols.append(f"{mg:+.3f} ({tie_c:+.3f} + {mg - tie_c:+.3f})")
+            spreads = [max(mean(f, g) for g in FLOOR_KEYS) - min(mean(f, g) for g in FLOOR_KEYS) for f in FLOOR_KEYS]
+            tops = [X.BOUNDS_ARMS[int(np.argmax([mean(m, key) for m in X.BOUNDS_ARMS]))] for key in FLOOR_KEYS + ("C",)]
+            tau = float(stats.kendalltau([mean(m, "floor_1e-6") for m in X.BOUNDS_ARMS], [mean(m, "C") for m in X.BOUNDS_ARMS])[0])
+            cost = {} if bound == "none" else {m: float(np.mean(diff(sel, bound_arm(m, bound), m, "C", "C"))) for m in X.BOUNDS_ARMS}
+            L.append(f"| {bound} | " + " | ".join(cols) + f" | {' / '.join(f'{x:.3f}' for x in spreads)} | {' / '.join(tops)} | "
+                     f"{tau:+.2f} | {', '.join(f'{m} {v:+.4f}' for m, v in cost.items()) or '—'} |")
+            out[bound] = dict(margins=margins, spreads=dict(zip(FLOOR_KEYS, spreads)), tops=dict(zip(FLOOR_KEYS + ("C",), tops)),
+                              tau=tau, cost=cost, tie_share=tie)
+        summary[ds] = out
+        L.append("")
+    return L, summary
+
+
 def run_report(experiment, run, audit_path=None, base=None):
     audit = audit_rows(audit_path)
     run = Path(run)
+    bases = [base] if isinstance(base, (str, Path)) else list(base or [])
     if experiment == "synthetic":
         L, s = report_synthetic(run)
     elif experiment == "rank_change":
@@ -634,11 +961,17 @@ def run_report(experiment, run, audit_path=None, base=None):
     elif experiment in ("inbin_smoothing", "inbin_smoothing_seeds"):
         L, s = report_smoothing(run, audit, new_seeds=experiment == "inbin_smoothing_seeds")
     elif experiment == "delta_misspecification":
-        L, s = report_misspecification(run, audit, base)
+        L, s = report_misspecification(run, audit, bases[0] if bases else None)
     elif experiment == "marks":
         L, s = report_marks(run, audit)
     elif experiment == "coarsened_real":
         L, s = report_coarsened(run, audit)
+    elif experiment == "coarsened_more":
+        L, s = report_coarsened(run, audit, datasets=X.COARSENED_MORE, arms=X.COARSEN_MORE_ARMS)
+    elif experiment in ("triangular_coarsened", "triangular_jitter", "triangular_recorded"):
+        L, s = report_triangular(run, bases)
+    elif experiment == "component_bounds":
+        L, s = report_component_bounds(run, bases)
     elif experiment == "floor_convention":
         raise SystemExit("floor_convention is reported by scripts/rescore_trained.py score/report (see README)")
     else:
@@ -653,7 +986,9 @@ def main(argv=None):
     ap.add_argument("experiment", choices=sorted(X.BUILDERS))
     ap.add_argument("run")
     ap.add_argument("--audit", default=None)
-    ap.add_argument("--base", default=None, help="delta_misspecification: run directory of the synthetic experiment")
+    ap.add_argument("--base", nargs="*", default=None,
+                    help="further run directories: delta_misspecification (the synthetic run); triangular_* (the runs whose "
+                         "latent_scores.jsonl and result.json hold the other treatments); component_bounds (the rank_change run)")
     a = ap.parse_args(argv)
     L, _ = run_report(a.experiment, a.run, a.audit, a.base)
     print("\n".join(L))
