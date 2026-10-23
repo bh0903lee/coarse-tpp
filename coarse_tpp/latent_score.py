@@ -32,6 +32,7 @@ from .models import build
 
 TOL = 1e-4
 KEYS = ("C", "B", "B_alt")
+SCHEMA = 2              # rows with B_alt; rows of version 1.0 (B and C only) are re-scored
 
 
 def _pad(arrs, idx, L, device):
@@ -86,6 +87,30 @@ def score_split(model, views, fine, stats, cfg, device, bs=64):
     return out
 
 
+def current(r: dict) -> bool:
+    """A row of the current schema: it carries B_alt on both splits."""
+    return r.get("schema") == SCHEMA and "B_alt" in (r.get("test") or {}) and "B_alt" in (r.get("dev") or {})
+
+
+def fresh_rows(dst: Path) -> dict:
+    """{cell_id: row} of the current-schema rows of an existing output file. Rows of an older schema (version 1.0
+    wrote B and C only) are not reusable: the file is backed up once to <name>.v1 and rewritten with the current rows
+    only, with a notice, so that the missing cells are scored again instead of being skipped."""
+    if not dst.exists():
+        return {}
+    rows = [json.loads(x) for x in dst.read_text().splitlines() if x.strip()]
+    keep = {r["cell_id"]: r for r in rows if current(r)}
+    stale = [r for r in rows if not current(r)]
+    if stale:
+        bak = dst.with_name(dst.name + ".v1")
+        if not bak.exists():
+            bak.write_bytes(dst.read_bytes())
+        dst.write_text("".join(json.dumps(r) + "\n" for r in keep.values()))
+        print(f"{dst}: {len(stale)} rows of an older schema (no B_alt) moved aside to {bak.name}; their cells are scored again",
+              flush=True)
+    return keep
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run")
@@ -93,7 +118,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     run = Path(a.run)
     dst = Path(a.out) if a.out else run / "latent_scores.jsonl"
-    done = {json.loads(x)["cell_id"] for x in dst.read_text().splitlines() if x.strip()} if dst.exists() else set()
+    done = set(fresh_rows(dst))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cache = {}
     with open(dst, "a") as fh:
@@ -118,7 +143,7 @@ def main(argv=None):
             model = build(cfg, stats, tr.coarse.n_types).to(device)
             model.load_state_dict(torch.load(cdir / "best_C.pt", map_location=device, weights_only=True))
             rule = Ro.RULE[cfg["treatment"]]
-            r = dict(cell_id=m["cell_id"], experiment=cfg.get("experiment"), arm=cfg["arm"], dataset=ds, seed=cfg["seed"],
+            r = dict(schema=SCHEMA, cell_id=m["cell_id"], experiment=cfg.get("experiment"), arm=cfg["arm"], dataset=ds, seed=cfg["seed"],
                      config=dict(dataset=ds, encoder=cfg["encoder"], head=cfg["head"], K=cfg["K"], lr_tag=cfg["lr_tag"],
                                  treatment=cfg["treatment"], delta=cfg["delta"], iw_samples=cfg.get("iw_samples")),
                      rule=rule, alt_rule=Ro.ALT[rule], dev_crit=res["by_selection"]["C"]["dev_criterion"],

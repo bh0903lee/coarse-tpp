@@ -20,6 +20,7 @@
 
 Recorded zero gaps are often stored as a small positive floor (the NHP / EasyTPP files store 1e-6); pass
 tie_stored=1.000001e-6 (the default) to read such values as ties, or 0.0 for files that store exact zeros.
+Input checks: gaps must be finite and non-negative, delta and eps finite and positive (ValueError otherwise).
 """
 from __future__ import annotations
 
@@ -46,9 +47,18 @@ def lattice_share(g: np.ndarray, d: float) -> float:
 
 def read_gaps(gaps, tie_stored: float = TIE_STORED) -> np.ndarray:
     """Recorded gaps as float64 with stored ties mapped to exactly 0 (any gap <= tie_stored, including a genuinely
-    positive one below the threshold)."""
+    positive one below the threshold). Gaps must be finite and non-negative (ValueError otherwise)."""
     g = np.asarray(gaps, dtype=np.float64)
+    if not np.isfinite(g).all():
+        raise ValueError("recorded gaps must be finite")
+    if np.any(g < 0):
+        raise ValueError("recorded gaps must be non-negative")
     return np.where(g <= tie_stored, 0.0, g)
+
+
+def _check_positive(name: str, x: float):
+    if not (isinstance(x, (int, float)) and math.isfinite(x) and x > 0):
+        raise ValueError(f"{name} must be a finite positive number, got {x!r}")
 
 
 def detect_resolution(gaps, constructed: float | None = None, tie_stored: float = TIE_STORED) -> dict[str, Any]:
@@ -122,8 +132,8 @@ def interval_loglik(law, tau, delta: float, tie_stored: float = TIE_STORED):
     without atoms at positive times (an atom at 0 counts toward the tie cell); other laws must provide
     `log_interval`. Returns (ll, tie) as numpy arrays."""
     import torch
-    t = torch.as_tensor(np.asarray(tau, np.float64))
-    g = torch.where(t <= tie_stored, torch.zeros_like(t), t)
+    _check_positive("delta", delta)
+    g = torch.as_tensor(read_gaps(tau, tie_stored))
     if hasattr(law, "log_interval"):
         ll = law.log_interval(g, g + delta)
     else:
@@ -136,8 +146,8 @@ def interval_loglik(law, tau, delta: float, tie_stored: float = TIE_STORED):
 def floor_loglik(law, tau, eps: float, tie_stored: float = TIE_STORED):
     """Per-event floor score log f(max(tau~, eps)) for comparison with the convention; `law` needs `log_density`."""
     import torch
-    t = torch.as_tensor(np.asarray(tau, np.float64))
-    g = torch.where(t <= tie_stored, torch.zeros_like(t), t)
+    _check_positive("eps", eps)
+    g = torch.as_tensor(read_gaps(tau, tie_stored))
     ll = law.log_density(g.clamp(min=eps))
     return ll.detach().cpu().numpy().astype(np.float64), (g <= 0).cpu().numpy()
 

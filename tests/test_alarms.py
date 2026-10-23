@@ -2,7 +2,7 @@
 the bootstrap, the rollout path model, and a tiny end-to-end run on CPU."""
 import json
 import math
-import pickle
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -164,6 +164,32 @@ def test_rt_requires_a_verified_checkpoint_and_quarantine_is_not_a_cache(tmp_pat
     assert K.sla_cache_state(tmp_path, "zz") == "absent"
 
 
+def test_cache_identity_missing_checkpoints_and_stale_own_scores(tmp_path):
+    """identity_ok: a cached record is current only when every checkpoint selection matches the present files (epoch and
+    SHA-256) or is recorded missing while the file is absent; own scores of a stale or missing record are not rankable."""
+    cdir = tmp_path / "cell"; cdir.mkdir()
+    (cdir / "best_C.pt").write_bytes(b"ckptC")
+    res = dict(cell_id="c0", arm="floor_1e-6", config=dict(out_dir=str(cdir), lr_tag="lr1e3", dataset="bpi_x", encoder=dict(type="gru")),
+               by_selection=dict(C=dict(selected_epoch=3), own=dict(selected_epoch=5)), dev={"floor_1e-6": 1.0, "C": -1.0})
+    rec = dict(version=K.VERSION, quarantined_sels=[], by_sel=dict(C=dict(missing=False, quarantined=False, selected_epoch=3,
+                                                                         ckpt_sha256=K.ckpt_sha(cdir / "best_C.pt"), dev_floor=2.0),
+                                                                  own=dict(missing=True)))
+    _write(tmp_path / "cells" / "c0.json", rec)
+    assert K.identity_ok(rec, res) and K.sla_cache_state(tmp_path, "c0", res) == "valid"
+    assert K.verification(tmp_path, "c0", "C", res) == "verified" and K.verification(tmp_path, "c0", "own", res) == "unverified"
+    assert K.own_lookup_fn(tmp_path)(res) is None                                      # own checkpoint missing: unrankable
+    (cdir / "best_own.pt").write_bytes(b"ckptO")                                        # the checkpoint appears later
+    assert not K.identity_ok(rec, res) and K.sla_cache_state(tmp_path, "c0", res) == "stale"
+    rec["by_sel"]["own"] = dict(missing=False, quarantined=False, selected_epoch=5, ckpt_sha256=K.ckpt_sha(cdir / "best_own.pt"), dev_floor=9.0)
+    _write(tmp_path / "cells" / "c0.json", rec)
+    assert K.sla_cache_state(tmp_path, "c0", res) == "valid" and K.own_lookup_fn(tmp_path)(res) == 9.0
+    res2 = dict(res, by_selection=dict(C=dict(selected_epoch=4), own=dict(selected_epoch=5)))      # a retrained cell
+    assert K.sla_cache_state(tmp_path, "c0", res2) == "stale" and K.own_lookup_fn(tmp_path)(res2) is None
+    rec["version"] = K.VERSION - 1                                                       # a stale version is never rankable
+    _write(tmp_path / "cells" / "c0.json", rec)
+    assert K.own_lookup_fn(tmp_path)(res) is None and K.sla_cache_state(tmp_path, "c0", res) == "stale"
+
+
 def test_bootstrap_deterministic_and_correct_point():
     rng = np.random.default_rng(0)
     n = rng.integers(1, 20, 50).astype(float)
@@ -238,6 +264,20 @@ def test_end_to_end_on_a_tiny_process_log(tmp_path, monkeypatch):
         assert S["n_scored"] == 2 and not S["quarantined"] and len(S["comparisons"]) >= 1
         comp = S["comparisons"][0]
         assert comp["boot95"][0] <= comp["diff"] <= comp["boot95"][1] or comp["same_model"]
-        assert any("## 4. Remaining time" in x for x in L) and (out / "rt").glob("*.json")
+        assert any("## 4. Remaining time" in x for x in L)
+        rt = sorted((out / "rt").glob("*.json"))
+        assert len(rt) == 4 and all(math.isfinite(json.loads(p.read_text())["mae_median"]) for p in rt)   # 2 cells x 2 checkpoints
+        # the cache is bound to the checkpoints: a changed best_C.pt makes the record stale and unverified
+        cells, _ = K.load_results(run)
+        res = next(r for r in cells if r["arm"] == "interval")
+        assert K.sla_cache_state(out, res["cell_id"], res) == "valid" and K.verification(out, res["cell_id"], "C", res) == "verified"
+        ck = Path(res["config"]["out_dir"]) / "best_C.pt"
+        ck.write_bytes(ck.read_bytes() + b"\0")
+        assert K.sla_cache_state(out, res["cell_id"], res) == "stale" and K.verification(out, res["cell_id"], "C", res) == "unverified"
+        assert K.rt_collect(out, {0: res}, "C")[1] == ["s0: unverified"]
+        L2 = K.cmd_report(a)
+        assert any("stale (cached for other checkpoints" in x and f"{res['cell_id']}" in x for x in L2)
+        K.cmd_score(a)                                                       # re-scores the stale cell only
+        assert K.sla_cache_state(out, res["cell_id"], res) == "valid"
     finally:
         D.set_data_dir(old)

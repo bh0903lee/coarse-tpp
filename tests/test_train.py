@@ -100,8 +100,9 @@ def test_iw_jitter_objective_limits():
 
 
 def test_triangular_jitter_objective_limits():
-    """S -> inf: the multi-sample triangular jitter increases to the triangular likelihood (Jensen; it stays below).
-    Ties draw from the kernel restricted to tau >= 0 with mass delta / 2."""
+    """The expected multi-sample triangular objective lies below the triangular likelihood (Jensen) and approaches it
+    as S grows; a single Monte Carlo draw can lie above it. Ties draw from the kernel restricted to tau >= 0 with mass
+    delta / 2."""
     law = lik.LogNormMix(torch.log(torch.tensor([0.5, 0.5], dtype=torch.float64)).expand(50, 2),
                          torch.tensor([-1.0, 1.0], dtype=torch.float64).expand(50, 2),
                          torch.tensor([-0.5, 0.0], dtype=torch.float64).expand(50, 2))
@@ -194,6 +195,13 @@ def test_latent_score_of_coarsened_data(datadir, tmp_path):
     latent_score.main([str(run2)])
     rows = [json.loads(x) for x in (run2 / "latent_scores.jsonl").read_text().splitlines()]
     assert len(rows) == 1 and not rows[0]["mismatch"] and abs(rows[0]["test"]["B"] - res["test"]["B"]) < 1e-6
+    # a row of the 1.0 schema (no B_alt) is moved aside and its cell scored again
+    old = dict(rows[0]); old.pop("schema"); old["test"] = dict(C=old["test"]["C"], B=old["test"]["B"]); old["dev"] = dict(B=old["dev"]["B"])
+    (run2 / "latent_scores.jsonl").write_text(json.dumps(old) + "\n")
+    latent_score.main([str(run2)])
+    rows = [json.loads(x) for x in (run2 / "latent_scores.jsonl").read_text().splitlines()]
+    assert len(rows) == 1 and rows[0]["schema"] == latent_score.SCHEMA and "B_alt" in rows[0]["test"]
+    assert (run2 / "latent_scores.jsonl.v1").exists()
 
 
 def test_storage_tick_rule(datadir):

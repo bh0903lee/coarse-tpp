@@ -1,4 +1,4 @@
-"""Real data with few ties coarsened on purpose (S3, "Coarsened real data"; S4, "Smoothing objectives"): absolute
+"""Real data with few ties coarsened on purpose (Supplementary S4, "Coarsened real data" and "Smoothing objectives"): absolute
 times floored to a grid delta = r x (median positive train gap), r in R. The original time of every event is kept as
 time_since_start_fine, so the latent-time score B can be computed (coarse_tpp.latent_score).
 

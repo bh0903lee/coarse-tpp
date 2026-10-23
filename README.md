@@ -29,7 +29,7 @@ Python 3.10. CPU is enough for the quick start; the full grids were run on GPUs.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # torch 2.6.0; pick the CUDA or CPU wheel for your machine
 pip install -e .                         # optional: installs the package coarse_tpp
-python -m pytest -q tests                # 118 tests, CPU, about two minutes
+python -m pytest -q tests                # 123 tests, CPU, about two minutes
 ```
 
 The scripts in `scripts/` work from the repository root without installation. Data live in `./data` (or the
@@ -118,8 +118,8 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Section 5.3, S4 and Supplementary Table S9 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
 | Section 5.3 and Supplementary Table S5 (location and scale of the mixture component at the tie: edits of the saved checkpoints; no training) | after `rank_change`: `scripts/component_edits.py score runs/rank_change`, then `scripts/component_edits.py report runs/rank_change` (writes `runs/rank_change/component_edits/`) | — |
 | Section 5.3 and Supplementary Tables S6 and S7 (lower bounds on the mixture components) | `component_bounds` (report with `--base runs/rank_change`, the unbounded arm) | 450 |
-| Section 5.3 and Supplementary Table S8 (SLA alarms and remaining time on the process logs; no training) | after `process_logs`: `scripts/sla_alarms.py score runs/process_logs --tasks sla,rt`, then `scripts/sla_alarms.py report runs/process_logs` (writes `runs/process_logs/alarms/`; `--base runs/triangular_recorded` adds the triangular candidate) | — |
-| Section 8 and S4 (triangular kernel on coarsened and recorded data, multi-sample triangular jitter) | `triangular_coarsened`, `coarsened_more`, `triangular_jitter`, each followed by `scripts/score_latent.py RUN` (also on `runs/coarsened_real`, `runs/synthetic`, `runs/inbin_smoothing`); `triangular_recorded`; one report: `scripts/report.py triangular_coarsened runs/triangular_coarsened --base runs/coarsened_real runs/coarsened_more runs/triangular_jitter runs/synthetic runs/inbin_smoothing runs/triangular_recorded runs/rank_change runs/process_logs` | 240, 840, 900, 320 |
+| Section 5.3 and Supplementary Table S8 (threshold-exceedance forecasts and remaining time on the process logs; no training) | after `process_logs`: `scripts/sla_alarms.py score runs/process_logs --tasks sla,rt`, then `scripts/sla_alarms.py report runs/process_logs` (writes `runs/process_logs/alarms/`; `--base runs/triangular_recorded` adds the triangular candidate) | — |
+| Section 8 and S4 (triangular kernel on coarsened and recorded data, multi-sample triangular jitter; the recorded-data table of the report takes its combinations from the `triangular_recorded` grid only) | `triangular_coarsened`, `coarsened_more`, `triangular_jitter`, each followed by `scripts/score_latent.py RUN` (also on `runs/coarsened_real`, `runs/synthetic`, `runs/inbin_smoothing`); `triangular_recorded`; one report: `scripts/report.py triangular_coarsened runs/triangular_coarsened --base runs/coarsened_real runs/coarsened_more runs/triangular_jitter runs/synthetic runs/inbin_smoothing runs/triangular_recorded runs/rank_change runs/process_logs` | 240, 840, 900, 320 |
 
 Supplementary Table S9 is derived from the rows of `predictive/summary.json`: for `twcrps` and `mae_median` (the other
 measures, `rmse`, `rmse_median` and `crps`, are in the same file), the table reports the seed-paired difference `d_m` (interval-score
@@ -131,6 +131,12 @@ of the selection criterion, differences are paired by seed (synthetic data: aver
 intervals are one-sided 95% t intervals. *Preserved*: lower bound of [interval − ε = 10⁻¹⁰] ≥ −0.01 nats;
 *violated*: upper bound < −0.01; *advantage*: Holm-adjusted p < 0.05 and a mean gain ≥ 0.01 nats over the strongest
 non-interval treatment chosen by dev C. These rules are implemented in `coarse_tpp/analysis.py`.
+
+The component and triangular-kernel analyses (Tables S5–S8, the triangular comparison of S4) are implemented in this
+release; their full training and checkpoint-scoring pipelines have not been rerun end to end with this public package.
+Unit tests and small integration tests validate the implementation, and the aggregation functions reproduce the
+published tables from the original result files; matching those tables requires the specified data, grids, selection
+rules and score checks.
 
 Results are deterministic for a given device and library version (seeded data order, initialization and jitter
 draws). Evaluating a trained model on another device changes the scores in the 6th to 8th decimal (float32 encoders;
@@ -158,7 +164,8 @@ evaluate trained models that are not distributed with this repository. They are 
   log-likelihood of the event times without the mark term; not a configuration option). The archive also holds the
   patched EasyTPP model code needed to rebuild them and `rescore_intensity_models.py`, which reproduces the paper's
   scores: compensators are integrated by a composite Gauss–Legendre rule graded toward both ends of each gap, for S2P2
-  additionally over every 1 s recording cell. `scripts/rescore_intensity.py` of this repository re-scores RMTPP, NHP,
+  additionally with fine panels at both ends of each of the first 64 one-second recording cells and of the target cell
+  and the graded rule over the remaining tail. `scripts/rescore_intensity.py` of this repository re-scores RMTPP, NHP,
   SAHP and AttNHP runs (one EasyTPP run directory with `saved_model.pt` and `config.yaml` per data set, model and run)
   with a single Gauss–Legendre rule per gap (`--nodes`, 32 by default); its values can differ from the paper's by up to
   about 0.7 nats per event (retrained RMTPP on Email-EU) for intensities that rise steeply after an event.
@@ -204,7 +211,7 @@ evaluate trained models that are not distributed with this repository. They are 
 | misspecified resolution | experiment `delta_misspecification`, arms `<treatment>_dx<m>` |
 | smoothing objectives | experiments `inbin_smoothing`, `inbin_smoothing_seeds` |
 | business process logs | experiment `process_logs` |
-| SLA alarms (P(next activity not recorded within h)) and remaining time of a case | `alarms.py`, `scripts/sla_alarms.py` (rules `F`: dev floor 10⁻⁶, `C`: dev interval score, `F_own`) |
+| threshold-exceedance forecasts, P(next activity not recorded within a horizon h) (illustrative deadline monitoring; no alarm policy evaluated), and remaining time of a case | `alarms.py`, `scripts/sla_alarms.py` (names kept; rules `F`: dev floor 10⁻⁶, `C`: dev interval score, `F_own`) |
 
 | Data set (paper) | Folder | Data set (paper) | Folder |
 |---|---|---|---|
@@ -235,7 +242,7 @@ coarse_tpp/           the package
   analysis.py         summary statistics and reports
   rescore.py, rescore_intensity.py, latent_score.py, diagnostics.py, predictive.py
   component_edits.py  edits of the mixture component at the tie on saved checkpoints (Table S5)
-  alarms.py           SLA alarms and remaining time on the process logs (Table S8)
+  alarms.py           threshold-exceedance forecasts and remaining time on the process logs (Table S8)
   prepare/            conversion of public data and derived data sets
   resources/          reference tie shares of the synthetic data; the Retweet subsample index
 scripts/              command-line entry points
