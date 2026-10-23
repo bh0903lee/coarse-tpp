@@ -12,8 +12,9 @@ gaps are multiples of a resolution Δ. This repository lets you
    conventional ε-floor scores, including the conversion rules (readouts) of models trained on jittered or
    zero-inflated data;
 3. **train** a GRU or Transformer encoder with a log-normal mixture head, or RMTPP / THP intensity heads, under every
-   treatment of ties studied in the paper (floors, jitter of gaps or times, multi-sample jitter, a point mass at zero,
-   the interval likelihood, a triangular-kernel likelihood, interval / jitter mixtures);
+   treatment of ties studied in the paper (floors, jitter of gaps or times, multi-sample uniform or triangular
+   jitter, a point mass at zero, the interval likelihood, a triangular-kernel likelihood, interval / jitter mixtures),
+   optionally with lower bounds on the mixture components;
 4. **generate** the synthetic processes with known latent times (SP, SR, SC, H1, H2, and two non-stationary ones) and
    their coarsened recordings;
 5. **prepare** the derived data sets (quantized ContTime, coarsened real data, new random splits, MOOC / Wikipedia,
@@ -28,7 +29,7 @@ Python 3.10. CPU is enough for the quick start; the full grids were run on GPUs.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # torch 2.6.0; pick the CUDA or CPU wheel for your machine
 pip install -e .                         # optional: installs the package coarse_tpp
-python -m pytest -q tests                # 74 tests, CPU, about a minute
+python -m pytest -q tests                # 118 tests, CPU, about two minutes
 ```
 
 The scripts in `scripts/` work from the repository root without installation. Data live in `./data` (or the
@@ -114,9 +115,13 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Section 8 and S4 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
 | Section 8 and S4 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
 | Section 8 and S4 (marks) | `marks` | 420 |
-| Section 5.3, S4 and Supplementary Table S5 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
+| Section 5.3, S4 and Supplementary Table S9 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
+| Section 5.3 and Supplementary Table S5 (location and scale of the mixture component at the tie: edits of the saved checkpoints; no training) | after `rank_change`: `scripts/component_edits.py score runs/rank_change`, then `scripts/component_edits.py report runs/rank_change` (writes `runs/rank_change/component_edits/`) | — |
+| Section 5.3 and Supplementary Tables S6 and S7 (lower bounds on the mixture components) | `component_bounds` (report with `--base runs/rank_change`, the unbounded arm) | 450 |
+| Section 5.3 and Supplementary Table S8 (SLA alarms and remaining time on the process logs; no training) | after `process_logs`: `scripts/sla_alarms.py score runs/process_logs --tasks sla,rt`, then `scripts/sla_alarms.py report runs/process_logs` (writes `runs/process_logs/alarms/`; `--base runs/triangular_recorded` adds the triangular candidate) | — |
+| Section 8 and S4 (triangular kernel on coarsened and recorded data, multi-sample triangular jitter) | `triangular_coarsened`, `coarsened_more`, `triangular_jitter`, each followed by `scripts/score_latent.py RUN` (also on `runs/coarsened_real`, `runs/synthetic`, `runs/inbin_smoothing`); `triangular_recorded`; one report: `scripts/report.py triangular_coarsened runs/triangular_coarsened --base runs/coarsened_real runs/coarsened_more runs/triangular_jitter runs/synthetic runs/inbin_smoothing runs/triangular_recorded runs/rank_change runs/process_logs` | 240, 840, 900, 320 |
 
-Supplementary Table S5 is derived from the rows of `predictive/summary.json`: for `twcrps` and `mae_median` (the other
+Supplementary Table S9 is derived from the rows of `predictive/summary.json`: for `twcrps` and `mae_median` (the other
 measures, `rmse`, `rmse_median` and `crps`, are in the same file), the table reports the seed-paired difference `d_m` (interval-score
 choice minus floor-score choice) in percent of the floor-score choice's value, `100 × d_m / m_floor`; the same scaling
 applies to the upper bound `d_m_up95`.
@@ -167,11 +172,13 @@ evaluate trained models that are not distributed with this repository. They are 
 | recorded-cell score C | `C` |
 | latent-time score B | `B` |
 | conversion rules (readouts) | `readout.RULE`: `raw`, `smooth`, `point_mass` |
+| alternative readout of a treatment (raw ↔ smooth; density part of the point-mass model) | `readout.ALT`; key `B_alt` of `latent_score.py` |
 | smoothed density q_B | readout `smooth` |
 | uniform jitter of the gaps | `jitter_gap` |
 | uniform jitter of the recorded times | `jitter_time` |
 | Gaussian jitter of the recorded times | `jitter_time_gauss` |
 | multi-sample jitter with S samples | `iw_jitter` with `iw_samples` = S (arms `iw_jitter_S{S}`) |
+| multi-sample triangular jitter with S samples (target gap drawn from the triangular kernel of its cell) | `iw_jitter_triangular` with `iw_samples` = S (arms `iw_jitter_triangular_S{S}`) |
 | point mass at zero (zero-inflated model) | `point_mass` |
 | triangular-kernel likelihood | `triangular` |
 | mixtures of the interval and jitter objectives | `interval_jitter_mix` with `mix_lambda` |
@@ -179,6 +186,8 @@ evaluate trained models that are not distributed with this repository. They are 
 | control trained on marks alone | arm `mark_only` |
 | log-normal mixture head | head `mix` (`mix_param: standard`) |
 | mixture head with component scales bounded through a sigmoid | `mix_param: sigma_sigmoid` |
+| lower bounds on the mixture components, σ_k ≥ 2 and μ_k ≥ log 10⁻⁴ | config keys `sigma_min`, `mu_min`; experiment `component_bounds`, arms `<treatment>_sigmin2`, `<treatment>_mumin1e-4`, `<treatment>_sigmin2_mumin1e-4` |
+| self-preference margin of a floor-trained model; relocation / rescaling of the component at the tie | `component_edits.py` (edits `location`, `scale`, `both`; `scale_event` as a secondary contrast) |
 | RMTPP, THP heads | heads `rmtpp`, `thp` |
 | GRU / Transformer encoder | encoders `gru`, `transformer` |
 | setting (process, Δ) and realization r | data set `synth_<process>_r<r>_d<Δ>`, e.g. `synth_SC_r1_d1p0` |
@@ -190,9 +199,12 @@ evaluate trained models that are not distributed with this repository. They are 
 | new random splits of the same data sets | experiment `resplit`, data sets `<name>_resplit` |
 | data sets not used elsewhere (MemeTracker, MOOC; Wikipedia as control) | experiment `new_datasets` |
 | ContTime, Taxi, StackOverflow coarsened to Δ = r × median gap | experiment `coarsened_real`, data sets `coarsened_<base>_r<r>` |
+| Earthquake and Taobao coarsened to Δ = r × median gap (storage-grain rule) | experiment `coarsened_more`, data sets `coarsened_earthquake_r<r>`, `coarsened_taobao_r<r>` (`scripts/prepare_coarsened.py --more`) |
+| triangular kernel on the coarsened and the recorded data sets | experiments `triangular_coarsened`, `triangular_jitter`, `triangular_recorded`; report `triangular_coarsened` with `--base` |
 | misspecified resolution | experiment `delta_misspecification`, arms `<treatment>_dx<m>` |
 | smoothing objectives | experiments `inbin_smoothing`, `inbin_smoothing_seeds` |
 | business process logs | experiment `process_logs` |
+| SLA alarms (P(next activity not recorded within h)) and remaining time of a case | `alarms.py`, `scripts/sla_alarms.py` (rules `F`: dev floor 10⁻⁶, `C`: dev interval score, `F_own`) |
 
 | Data set (paper) | Folder | Data set (paper) | Folder |
 |---|---|---|---|
@@ -222,6 +234,8 @@ coarse_tpp/           the package
   runner.py           runs a grid sequentially or on several GPUs
   analysis.py         summary statistics and reports
   rescore.py, rescore_intensity.py, latent_score.py, diagnostics.py, predictive.py
+  component_edits.py  edits of the mixture component at the tie on saved checkpoints (Table S5)
+  alarms.py           SLA alarms and remaining time on the process logs (Table S8)
   prepare/            conversion of public data and derived data sets
   resources/          reference tie shares of the synthetic data; the Retweet subsample index
 scripts/              command-line entry points

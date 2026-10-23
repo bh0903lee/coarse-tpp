@@ -6,7 +6,8 @@ A cell that already has a valid result.json is not trained again.
 
 Config keys (coarse_tpp.experiments writes them):
   dataset, seed, encoder {type, marks, ...}, head (mix | rmtpp | thp), K, mix_param (mixture parameterization,
-  default standard), treatment, eps (floor), iw_samples (iw_jitter), mix_lambda (interval_jitter_mix),
+  default standard), sigma_min / mu_min (lower bounds of the standard mixture head, coarse_tpp.models), treatment,
+  eps (floor), iw_samples (iw_jitter, iw_jitter_triangular), mix_lambda (interval_jitter_mix),
   delta (recording resolution of the data; 0 = exact), delta_model (resolution assumed by the treatment; = delta
   unless misspecified), optim {lr, batch_size, max_epochs, patience, grad_clip}, mark_head (add a categorical mark
   head; the objective, the selection and the test metrics include the mark term; encoder.marks must be true),
@@ -18,6 +19,8 @@ Treatments (training objective per target event):
   floor                log q(max(tau~, eps))
   jitter_gap           log q(tau~ + delta u), u ~ U(0, 1) drawn per step (targets only)
   iw_jitter            log (1/S) sum_s q(tau~ + delta u_s) (S = iw_samples)
+  iw_jitter_triangular log m + log (1/S) sum_s q(w_s), w_s drawn from the triangular kernel of the recorded cell
+                       and m its mass (coarse_tpp.data); S -> inf gives the triangular likelihood
   jitter_time          recorded times + U(0, delta), re-sorted (inputs and targets); log q of the new gaps
   jitter_time_gauss    as jitter_time with N(0, delta^2 / 12) noise
   point_mass           tie: log pi; positive gap: log(1 - pi) + log q(tau~)
@@ -50,11 +53,12 @@ from . import data as D
 from . import lik
 from . import readout as Ro
 from . import results as R
-from .data import (coarse_stats, jitter_targets_uniform, jitter_targets_uniform_multi, jitter_times, load, per_target,
-                   score_mask)
+from .data import (coarse_stats, jitter_targets_triangular_multi, jitter_targets_uniform, jitter_targets_uniform_multi,
+                   jitter_times, load, per_target, score_mask)
 from .models import build
 
 EPS_JIT = 1e-10          # density floor for jittered / exact gaps (positive almost surely)
+TIW_ZERO = 1e-300        # iw_jitter_triangular: an exactly-zero kernel draw (u = v) is evaluated here; positive draws are not floored
 SELECTIONS = ("C", "own", "B")
 FLOORS = {"floor_1e-10": 1e-10, "floor_1e-6": 1e-6, "floor_1e-5": 1e-5}
 
@@ -153,6 +157,12 @@ def train_ll(law, tl, tau, cfg, gen=None):
         S = int(cfg["iw_samples"])
         x = jitter_targets_uniform_multi(tau, d, S, gen)                       # (S, B, L); the law broadcasts over S
         return torch.logsumexp(lik.event_loglik(law, x, "floor", eps=EPS_JIT), dim=0) - math.log(S)
+    if t == "iw_jitter_triangular":   # log mass + log (1/S) sum_s q(w_s), w_s from the triangular kernel; S -> inf is triangular
+        S = int(cfg["iw_samples"])
+        w, log_mass = jitter_targets_triangular_multi(tau, d, S, gen)
+        # the density is evaluated at the drawn point itself (a floor max(w, eps) on positive draws would change the
+        # limit); only an exact w = 0 (u = v in float64, probability ~0) is moved to TIW_ZERO
+        return log_mass + torch.logsumexp(law.log_density(w.clamp(min=TIW_ZERO)), dim=0) - math.log(S)
     if t == "point_mass":
         return lik.event_loglik(law, tau, "point_mass", tie_logit=tl)
     if t == "interval_jitter_mix":   # interval likelihood minus lambda x (its Jensen gap to the jitter bound)

@@ -4,9 +4,12 @@ Every trained model gives, from the recorded history, a law q (+ a tie probabili
 It is turned into a law of s_i = t_i - t~_{i-1} (latent time since the last recorded time) by a rule fixed per
 treatment:
   raw         floor, jitter_gap, iw_jitter, interval, interval_jitter_mix, latent     q_B = q
-  smooth      jitter_time, jitter_time_gauss, triangular       q_B(s) = (Q(s) - Q(s - delta)) / delta
+  smooth      jitter_time, jitter_time_gauss, triangular, iw_jitter_triangular
+              q_B(s) = (Q(s) - Q(s - delta)) / delta
               (latent-gap models convolved with the U(0, delta) position of the previous record)
   point_mass  point_mass    q_B(s) = pi 1[s < delta] / delta + (1 - pi)(Q(s) - Q(s - delta)) / delta
+The alternative readout of each rule (ALT; reported by coarse_tpp.latent_score, Supplementary S4): raw <-> smooth,
+and point_mass_raw for the point-mass model, whose B is the density part (1 - pi) q(s).
 Scores:
   C (recorded cell)   log of the probability of the recorded cell [tau~, tau~ + delta) under q_B
                       = interval (raw), triangular (smooth),
@@ -31,7 +34,8 @@ from . import lik
 
 RULE = {"latent": "raw", "floor": "raw", "interval": "raw", "jitter_gap": "raw", "iw_jitter": "raw",
         "interval_jitter_mix": "raw", "jitter_time": "smooth", "jitter_time_gauss": "smooth", "triangular": "smooth",
-        "point_mass": "point_mass"}
+        "iw_jitter_triangular": "smooth", "point_mass": "point_mass"}
+ALT = {"raw": "smooth", "smooth": "raw", "point_mass": "point_mass_raw"}
 TIE0 = 1e-6
 
 
@@ -70,12 +74,14 @@ def C(law, tl, tau, delta, rule):
 def B(law, tl, s, delta, rule):
     """Per-event latent-time score log q_B(s) under the readout `rule`."""
     s = s.double()
-    if delta == 0 and rule == "point_mass":          # the density part carries mass 1 - pi
+    if rule == "point_mass_raw" or (delta == 0 and rule == "point_mass"):     # the density part carries mass 1 - pi
         return F.logsigmoid(-tl.double()) + law.log_density(s.clamp(min=1e-10))
     if delta == 0 or rule == "raw":
         return law.log_density(s.clamp(min=1e-10))
     if rule == "smooth":
         return _smooth_B(law, s, delta)
+    if rule != "point_mass":
+        raise ValueError(rule)
     l1p = F.logsigmoid(-tl.double())
     pt = F.logsigmoid(tl.double()) - math.log(delta)
     cont = l1p + _smooth_B(law, s, delta)
