@@ -1,5 +1,8 @@
-"""SLA alarms and remaining time on the process logs: does the choice of score change a decision made from the model?
-(Section 5.3, "Consequence for a decision task"; Supplementary S4, Table S8.) Exploratory, no training.
+"""Threshold-exceedance forecasts and remaining time on the process logs: does the choice of score change a
+probability prediction made from the model? (Section 5.3, "Consequence for probability prediction"; Supplementary S4,
+Table S8.) Exploratory, no training. The horizons are derived from the data and illustrate deadline (SLA-style)
+monitoring; they are not observed service-level agreements, and no alarm policy or operational utility is evaluated.
+The file and command names (alarms, sla_alarms) are kept for compatibility.
 
     python -m coarse_tpp.alarms score RUN_DIR [--base TRI_RUN] [--tasks sla,rt] [--datasets bpi_sepsis ...]
                                    [--selected] [--only CELL ...] [--limit N] [--force] [--retry-quarantined] [--cpu]
@@ -21,7 +24,8 @@ Selection rules (dev split):
          stored dev floor 1e-6. Each candidate carries its checkpoint; the chosen (candidate, checkpoint) is evaluated.
 Every unit is reported without the triangular candidate and, when it exists and is complete, with it.
 
-SLA alarms (primary). For every scored test target (masks of coarse_tpp.train.evaluate) and grid point h,
+Threshold exceedance (primary; "SLA" in the file names). For every scored test target (masks of coarse_tpp.train.evaluate)
+and grid point h,
 p_h = P(recorded next gap g > h) = 1 - F(h + delta) (g > h <=> s >= h + delta, s = latent time since the last record),
 F the distribution function of the predictive law of s under the treatment's readout (coarse_tpp.predictive.cdf):
   raw          F = Q (the mixture distribution function)
@@ -53,10 +57,14 @@ for a (cell, checkpoint) whose SLA reproduction check passed ('verified').
 Validity: test C of the checkpoint recomputed with the batches of coarse_tpp.train.evaluate must match result.json
 (by_selection.<sel>.test.C) within C_TOL; for best_C.pt also dev C and dev floor 1e-6 against result['dev'];
 otherwise the cell is quarantined (never a valid cache, excluded from the report; --retry-quarantined recomputes it).
+Cache identity: every cached checkpoint result stores the checkpoint's SHA-256 and selected epoch; a cached file whose
+checkpoints differ from the current result.json / best_<sel>.pt (or whose set of available checkpoints changed) is
+stale and is recomputed, and its RT files are not reported.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -348,11 +356,12 @@ def choose(cands: dict, rule: Rule, with_tri: bool):
 
 
 def own_lookup_fn(out_dir: Path):
-    """dev floor 1e-6 of best_own.pt from the SLA file (None if absent, missing or quarantined: not rankable)."""
+    """dev floor 1e-6 of best_own.pt from the SLA file; None (not rankable) unless that checkpoint is verified for the
+    current result (current version and identity, present, not quarantined)."""
     def f(r):
-        j = sla_record(out_dir, r["cell_id"])
-        o = (j or {}).get("by_sel", {}).get("own")
-        return o.get("dev_floor") if o and not o.get("missing") and not o.get("quarantined") else None
+        if verification(out_dir, r["cell_id"], "own", r if "config" in r else None) != "verified":
+            return None
+        return sla_record(out_dir, r["cell_id"])["by_sel"]["own"].get("dev_floor")
     return f
 
 
@@ -379,6 +388,11 @@ def same_model(cands, a, b):
 
 
 # ------------------------------------------------------------------ cache / verification state
+def ckpt_sha(path) -> str:
+    """SHA-256 of a checkpoint file: the identity a cached result is bound to."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def sla_record(out_dir: Path, cell_id: str):
     p = Path(out_dir) / "cells" / f"{cell_id}.json"
     if not p.exists():
@@ -389,21 +403,41 @@ def sla_record(out_dir: Path, cell_id: str):
         return None
 
 
-def sla_cache_state(out_dir: Path, cell_id: str):
-    """'absent' | 'stale' (other version) | 'quarantined' (some checkpoint failed the reproduction check: not a valid
-    cache) | 'valid'."""
+def identity_ok(j: dict, res: dict) -> bool:
+    """The cached checkpoint results of `j` belong to the current result `res`: for every selection, the checkpoint
+    file either is absent now and was recorded missing, or exists and matches the recorded selected epoch and SHA-256."""
+    out_dir = Path(res["config"]["out_dir"])
+    for sel in SELS:
+        ck = out_dir / f"best_{sel}.pt"
+        r = (j.get("by_sel") or {}).get(sel)
+        if r is None:
+            return False
+        if not ck.exists() or sel not in res.get("by_selection", {}):
+            if not r.get("missing"):
+                return False
+            continue
+        if r.get("missing") or r.get("selected_epoch") != res["by_selection"][sel].get("selected_epoch") \
+                or r.get("ckpt_sha256") != ckpt_sha(ck):
+            return False
+    return True
+
+
+def sla_cache_state(out_dir: Path, cell_id: str, res: dict | None = None):
+    """'absent' | 'stale' (other version, or with `res`: the cached checkpoints are not the current ones) |
+    'quarantined' (some checkpoint failed the reproduction check: not a valid cache) | 'valid'."""
     j = sla_record(out_dir, cell_id)
     if j is None:
         return "absent"
-    if j.get("version") != VERSION:
+    if j.get("version") != VERSION or (res is not None and not identity_ok(j, res)):
         return "stale"
     return "quarantined" if j.get("quarantined_sels") else "valid"
 
 
-def verification(out_dir: Path, cell_id: str, sel: str):
-    """'verified' | 'quarantined' | 'unverified' (no current SLA record for that checkpoint) of one (cell, checkpoint)."""
+def verification(out_dir: Path, cell_id: str, sel: str, res: dict | None = None):
+    """'verified' | 'quarantined' | 'unverified' (no current SLA record for that checkpoint, or a record of other
+    checkpoints when `res` is given) of one (cell, checkpoint selection)."""
     j = sla_record(out_dir, cell_id)
-    if j is None or j.get("version") != VERSION:
+    if j is None or j.get("version") != VERSION or (res is not None and not identity_ok(j, res)):
         return "unverified"
     r = j.get("by_sel", {}).get(sel)
     if not r or r.get("missing"):
@@ -412,13 +446,14 @@ def verification(out_dir: Path, cell_id: str, sel: str):
 
 
 def rt_collect(out_dir: Path, seeds_res: dict, sel: str):
-    """RT records of one chosen model: (rows over seeds that are verified AND have a current RT file, [pending items])."""
+    """RT records of one chosen model: (rows over seeds that are verified for the current checkpoint AND have a current
+    RT file, [pending items])."""
     rows, pending = [], []
     for s in PLANNED_SEEDS:
         r = seeds_res.get(s)
         if r is None:
             pending.append(f"s{s}: no cell"); continue
-        st = verification(out_dir, r["cell_id"], sel)
+        st = verification(out_dir, r["cell_id"], sel, r if "config" in r else None)
         p = Path(out_dir) / "rt" / f"{r['cell_id']}__{sel}.json"
         if st != "verified":
             pending.append(f"s{s}: {st}"); continue
@@ -465,7 +500,7 @@ def score_cell(res, device, out_dir: Path):
         stored = float(res["by_selection"][sel]["test"]["C"])
         r = dict(missing=False, n_events=P["n"], C_recomputed=P["C_mean"], C_stored=stored, C_absdiff=abs(P["C_mean"] - stored),
                  dev_C=Pd["C_mean"], dev_floor=Pd["floor_mean"], test_floor=P["floor_mean"],
-                 selected_epoch=res["by_selection"][sel].get("selected_epoch"))
+                 selected_epoch=res["by_selection"][sel].get("selected_epoch"), ckpt_sha256=ckpt_sha(ck))
         bad = r["C_absdiff"] > C_TOL
         if sel == "C" and res.get("dev"):
             r["dev_C_absdiff"] = abs(Pd["C_mean"] - float(res["dev"]["C"]))
@@ -659,7 +694,7 @@ def selected_cell_sels(cands_by_unit, out_dir, rules=("F", "C", "F_own")):
 
 def _sla_pass(cells, device, out_dir, a):
     for i, res in enumerate(cells):
-        st = sla_cache_state(out_dir, res["cell_id"])
+        st = sla_cache_state(out_dir, res["cell_id"], res)
         if st == "valid" and not a.force:
             continue
         if st == "quarantined" and not (a.force or a.retry_quarantined):
@@ -708,7 +743,7 @@ def cmd_score(a):
         base = _filter(cells, a)
         todo = [(r, s) for r in base for s in (SELS if a.rt_all else sorted(need.get(r["cell_id"], ())))]
         for i, (res, sel) in enumerate(todo):
-            st = verification(out_dir, res["cell_id"], sel)
+            st = verification(out_dir, res["cell_id"], sel, res)
             if st != "verified":
                 print(f"[rt {i + 1}/{len(todo)}] {res['cell_id']} {sel}: skipped, reproduction {st} (run sla first)", flush=True)
                 continue
@@ -781,10 +816,13 @@ def cmd_report(a):
     cells, info = load_results(a.run, a.base or (), a.datasets)
     cands = candidates(cells)
     deltas = {r["config"]["dataset"]: float(r["config"]["delta"]) for r in cells}
-    scored, quarantined = {}, []
+    scored, quarantined, stale = {}, [], []
     for r in cells:
-        j = sla_record(out_dir, r["cell_id"])
-        if j is not None and j.get("version") == VERSION:
+        st = sla_cache_state(out_dir, r["cell_id"], r)
+        if st == "stale":
+            stale.append(r["cell_id"]); continue
+        if st in ("valid", "quarantined"):
+            j = sla_record(out_dir, r["cell_id"])
             scored[r["cell_id"]] = j
             quarantined += [f"{r['cell_id']}:{s}" for s in j.get("quarantined_sels", [])]
     datasets = sorted({u[0] for u in cands}, key=lambda d: (d not in PRIMARY_DS, d))
@@ -793,10 +831,11 @@ def cmd_report(a):
          "Supplementary S4, Table S8. BPIC12 and Sepsis (more than 1% ties) are the main logs, the others auxiliary; the "
          "analysis is descriptive.", "",
          "Inputs: " + "; ".join(f"{k}: {v}" for k, v in info.items()) + ".",
-         f"SLA-scored cells: {len(scored)} of {len(cells)}; quarantined (cell:checkpoint): {len(quarantined)}"
+         f"SLA-scored cells: {len(scored)} of {len(cells)}; stale (cached for other checkpoints; re-run score): {len(stale)}"
+         + (f" — {', '.join(stale[:30])}" if stale else "") + f"; quarantined (cell:checkpoint): {len(quarantined)}"
          + (f" — {', '.join(quarantined[:30])}" if quarantined else "") + ".", ""]
-    if scored:
-        cs = [s for j in scored.values() for s in j["by_sel"].values() if not s.get("missing")]
+    cs = [s for j in scored.values() for s in j["by_sel"].values() if not s.get("missing")]
+    if cs:
         L += [f"Reproduction: max |test C recomputed - stored| {max(s['C_absdiff'] for s in cs):.2e}; "
               f"max |dev C|, |dev floor 1e-6| diff (best_C) {max([s.get('dev_C_absdiff', 0) for s in cs]):.2e}, "
               f"{max([s.get('dev_floor_absdiff', 0) for s in cs]):.2e}; cell-probability check F against exp(C): max relative mismatch "
@@ -930,7 +969,7 @@ def cmd_report(a):
                      f"{mm('coverage80'):.3f} | {mm('width80'):.4g} | {mm('brier_H'):.4f} | {mm('trunc_share'):.4f} | {sum(j['n_capped_draws'] for j in js)} |")
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "report.md").write_text("\n".join(L) + "\n")
-    _write_json(out_dir / "summary.json", dict(data=hdr, comparisons=summary, n_scored=len(scored), quarantined=quarantined,
+    _write_json(out_dir / "summary.json", dict(data=hdr, comparisons=summary, n_scored=len(scored), stale=stale, quarantined=quarantined,
                                                selections={f"{u[0]}|{u[1]}|{v}": dict(
                                                    complete=row["complete"], missing=row["missing"],
                                                    rules=None if row["rules"] is None else {

@@ -3,8 +3,10 @@
     python -m coarse_tpp.rescore score RUN_DIR [--selection own] [--audit results/audit/audit.json]
     python -m coarse_tpp.rescore report RUN_DIR [--compare floor_1e-6_sigma_sigmoid floor_1e-6_standard]
 
-score: for every finished cell of RUN_DIR (e.g. the floor_convention experiment) the model is rebuilt, the
-checkpoint best_<selection>.pt is loaded, and the per-event mixture is recomputed on dev and test with the inputs the
+score: for every finished cell of RUN_DIR (e.g. the floor_convention experiment) whose result passes the validity
+rule of the reports (coarse_tpp.results: status ok, the stored config equals the cell config, the test event count
+matches; cells stopped by the wall-clock limit or with non-finite metrics are skipped with a notice) the model is
+rebuilt, the checkpoint best_<selection>.pt is loaded, and the per-event mixture is recomputed on dev and test with the inputs the
 model was trained on. Scores (mean per target event, with tie / non-tie means): floor_1e-10 / floor_1e-6 / floor_1e-5
 (density at max(tau~, eps)) and, with the audited delta of the data set (else the cell's delta, if positive), interval (log P(tau~ <= tau < tau~ + delta)).
 Recorded gaps stored as <= 1.000001e-6 are ties. For models trained and selected by the floor 1e-6 log-likelihood
@@ -29,6 +31,7 @@ from scipy import stats as SS
 
 from . import data as D
 from . import lik
+from . import results as R
 from .analysis import audit_rows, fmt
 from .data import TIE_STORED, coarse_stats, load, stores_floor
 from .models import build
@@ -112,9 +115,15 @@ def score(run, selection="own", audit_path=None):
                 continue
             cdir = Path(cfg["out_dir"])
             ck = cdir / f"best_{selection}.pt"
-            if not (cdir / "result.json").exists() or not ck.exists() or cfg["head"] != "mix":
+            st, why, res = R.load(cfg)                 # the validity rule of the reports: status ok, same config, counts
+            if st == "missing" or cfg["head"] != "mix":
                 continue
-            res = json.loads((cdir / "result.json").read_text())
+            if st != "ok":
+                print(f"{m['cell_id']}: skipped, result {st}" + (f" ({why})" if why else ""), flush=True)
+                continue
+            if not ck.exists():
+                print(f"{m['cell_id']}: skipped, no checkpoint {ck.name}", flush=True)
+                continue
             r = dict(cell_id=m["cell_id"], arm=cfg["arm"], dataset=cfg["dataset"], seed=cfg["seed"], lr_tag=cfg["lr_tag"],
                      selection=selection, delta=delta, **score_cell(cfg, ck, delta, device, cache))
             if selection == "own" and cfg["treatment"] == "floor" and cfg.get("eps") == 1e-6:

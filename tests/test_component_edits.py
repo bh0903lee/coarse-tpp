@@ -1,6 +1,8 @@
 """Component edits (Supplementary S4): pure functions, cache rules, and a tiny end-to-end run on CPU."""
 import json
 import math
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
@@ -155,6 +157,15 @@ def test_quarantined_cache_is_not_valid(tmp_path):
     assert K.cache_state(_cell(tmp_path, version=K.VERSION - 1)) == "invalid"
     assert K.cache_state(_cell(tmp_path, edits={f: {"none": {}, "scale": {}} for f in K.FLOORS})) == "invalid"
     assert K.should_score(tmp_path / "missing.json")
+    # the cache is bound to the selected cells and their checkpoints
+    models = {a: dict(cell_id=f"c_{a}", ckpt_sha256="s" * 64) for a in K.ARMS}
+    same = {a: (f"c_{a}", "s" * 64) for a in K.ARMS}
+    p = _cell(tmp_path, models=models)
+    assert K.cache_state(p, same) == "ok" and not K.should_score(p, expected=same)
+    other_lr = dict(same, interval=("c_interval_lr3e4", "s" * 64))
+    assert K.cache_state(p, other_lr) == "stale" and K.should_score(p, expected=other_lr)
+    new_ckpt = dict(same, **{"floor_1e-6": ("c_floor_1e-6", "t" * 64)})
+    assert K.cache_state(p, new_ckpt) == "stale"
 
 
 def test_end_to_end_on_tiny_cells(tmp_path, monkeypatch):
@@ -179,5 +190,12 @@ def test_end_to_end_on_tiny_cells(tmp_path, monkeypatch):
         assert math.isclose(m["tie"] + m["nontie"], m["total"], abs_tol=1e-12)
         assert any("## 2. Summary" in x for x in L)
         K.cmd_score(run, out, cpu=True)                     # a valid cache is not re-scored
+        sel = K.selected(run)
+        exp = K.expected_models(sel, ds, "gru", 0)
+        p = out / "cells" / f"{K.item_name(ds, 'gru', 0)}.json"
+        assert K.cache_state(p, exp) == "ok" and set(exp) == set(K.ARMS)
+        ck = sel[(ds, "gru")]["interval"][0]["config"]["out_dir"] + "/best_C.pt"
+        Path(ck).write_bytes(Path(ck).read_bytes() + b"\0")          # a changed checkpoint makes the cache stale
+        assert K.cache_state(p, K.expected_models(sel, ds, "gru", 0)) == "stale"
     finally:
         D.set_data_dir(old)

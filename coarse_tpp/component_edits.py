@@ -39,6 +39,7 @@ skips it with a notice; --force recomputes every item.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -176,25 +177,46 @@ def floor_sums(P, eps, mu=None, ls=None, rows=None):
 
 
 # ------------------------------------------------------------------ cache state
-def cache_state(path):
-    """'ok' (current version, complete, not quarantined), 'quarantined' (current version, quarantined) or 'invalid'."""
+def ckpt_sha(path) -> str:
+    """SHA-256 of a checkpoint file: the identity a cached result is bound to."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def expected_models(sel, ds, enc, seed):
+    """{arm: (cell_id, checkpoint sha)} of the models the current selection assigns to a work item."""
+    out = {}
+    for arm in ARMS:
+        cfg = sel[(ds, enc)][arm][seed]["config"]
+        out[arm] = (cfg["cell_id"], ckpt_sha(Path(cfg["out_dir"]) / "best_C.pt"))
+    return out
+
+
+def cache_state(path, expected=None):
+    """'ok' (current version, complete, not quarantined), 'quarantined' (current version, quarantined), 'stale' (the
+    cached models differ from the current selection `expected` = {arm: (cell_id, checkpoint sha)}: another learning
+    rate was selected or a checkpoint changed) or 'invalid' (absent, unreadable, other version, incomplete)."""
     try:
         r = json.loads(Path(path).read_text())
         if r.get("version") != VERSION or not all(f in r["floors"] for f in FLOORS) or \
                 not all(e in r["edits"].get(f, {}) for f in FLOORS for e in EDITS):
             return "invalid"
+        if expected is not None:
+            for arm, (cid, sha) in expected.items():
+                m = r["models"].get(arm) or {}
+                if m.get("cell_id") != cid or m.get("ckpt_sha256") != sha:
+                    return "stale"
         return "quarantined" if r.get("quarantined", True) else "ok"
     except Exception:
         return "invalid"
 
 
-def valid(path):
-    return cache_state(path) == "ok"
+def valid(path, expected=None):
+    return cache_state(path, expected) == "ok"
 
 
-def should_score(path, force=False, retry_quarantined=False):
-    st = cache_state(path)
-    if force or st == "invalid":
+def should_score(path, force=False, retry_quarantined=False, expected=None):
+    st = cache_state(path, expected)
+    if force or st in ("invalid", "stale"):
         return True
     return st == "quarantined" and retry_quarantined
 
@@ -274,12 +296,13 @@ def score_item(ds, enc, seed, sel, device, cache):
         cfg = res["config"]
         stats = coarse_stats(tr, delta)
         model = build(cfg, stats, tr.coarse.n_types).to(device)
-        model.load_state_dict(torch.load(Path(cfg["out_dir"]) / "best_C.pt", map_location=device, weights_only=True))
+        ckpt = Path(cfg["out_dir"]) / "best_C.pt"
+        model.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
         P[arm] = p = extract(model, te, stats, cfg, device)
         n, nt = int(len(p["tau"])), int(p["tie"].sum())
         st = res["by_selection"]["C"]["test"]
         e6 = float(floor_score(p["lw"], p["mu"], p["ls"], p["tau"], 1e-6).mean())
-        chk = dict(cell_id=cfg["cell_id"], lr_tag=cfg["lr_tag"], floor_1e6=e6, stored=st["floor_1e-6"],
+        chk = dict(cell_id=cfg["cell_id"], lr_tag=cfg["lr_tag"], ckpt_sha256=ckpt_sha(ckpt), floor_1e6=e6, stored=st["floor_1e-6"],
                    abs_diff=abs(e6 - st["floor_1e-6"]), n=n, n_tie=nt, stored_n=st["n_events"], stored_n_tie=st["n_ties"],
                    log_std=float(stats.log_std), sigma_lo=float(stats.log_std) * math.exp(-5.0))
         chk["ok"] = chk["abs_diff"] <= REPRO_TOL and n == st["n_events"] and nt == st["n_ties"]
@@ -329,8 +352,9 @@ def cmd_score(run, out, shard="0/1", limit=0, cpu=False, threads=4, force=False,
     cache = {}
     for ds, enc, seed in todo:
         dst = out / "cells" / f"{item_name(ds, enc, seed)}.json"
-        if not should_score(dst, force, retry_quarantined):
-            if cache_state(dst) == "quarantined":
+        exp = expected_models(sel, ds, enc, seed)
+        if not should_score(dst, force, retry_quarantined, exp):
+            if cache_state(dst, exp) == "quarantined":
                 print(f"{dst.name}: quarantined cache, not re-scored (use --retry-quarantined or --force)", flush=True)
             continue
         t0 = time.time()
@@ -396,12 +420,14 @@ def cmd_report(run, out):
     sel = selected(run)
     units = tied_units(sel)
     expected = work_items(sel, units)
-    recs, missing, quar = {}, [], []
+    recs, missing, quar, stale = {}, [], [], []
     for ds, enc, seed in expected:
         p = out / "cells" / f"{item_name(ds, enc, seed)}.json"
-        st = cache_state(p)
+        st = cache_state(p, expected_models(sel, ds, enc, seed))
         if st == "quarantined":
             quar.append(item_name(ds, enc, seed)); continue
+        if st == "stale":
+            stale.append(item_name(ds, enc, seed)); continue
         if st != "ok":
             missing.append(item_name(ds, enc, seed)); continue
         recs.setdefault((ds, enc), []).append(json.loads(p.read_text()))
@@ -410,7 +436,8 @@ def cmd_report(run, out):
     L = ["# Component edits: location and scale of the component at the tie (no training)", "",
          "Exploratory diagnostic of saved checkpoints on test events (Supplementary S4), not a correction.", "",
          f"Units (test tie share >= {TIE_MIN:.0%}): " + ", ".join(f"{d}/{e}" for d, e in units) + ".",
-         f"Work items scored: {len(allrecs)}/{len(expected)}; missing {len(missing)}; quarantined {len(quar)} "
+         f"Work items scored: {len(allrecs)}/{len(expected)}; missing {len(missing)}; stale {len(stale)} (cached for other models "
+         f"or checkpoints than the current selection; re-run score); quarantined {len(quar)} "
          f"(stored test floor 1e-6 not reproduced within {REPRO_TOL:g}); max |floor 1e-6 - stored| = {maxdiff:.2e}.", "",
          "Margin M_m = mean floor score (eps_m) of the model trained with eps_m minus the best of the other four "
          f"({', '.join(ARMS)}), on seed means, nats per scored event; tie + non-tie = M. Edits apply only to the eps_m model's "
@@ -425,6 +452,8 @@ def cmd_report(run, out):
          "tie score below the runner-up's, as location typically does.", ""]
     if missing:
         L += ["Missing: " + ", ".join(missing[:30]) + (" ..." if len(missing) > 30 else ""), ""]
+    if stale:
+        L += ["Stale: " + ", ".join(stale), ""]
     if quar:
         L += ["Quarantined: " + ", ".join(quar), ""]
     U = {u: unit_rows(v) for u, v in sorted(recs.items())}
@@ -485,7 +514,7 @@ def cmd_report(run, out):
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.md").write_text("\n".join(L) + "\n")
     (out / "summary.json").write_text(json.dumps(dict(
-        units=[list(u) for u in units], n_items=len(expected), n_scored=len(allrecs), missing=missing, quarantined=quar,
+        units=[list(u) for u in units], n_items=len(expected), n_scored=len(allrecs), missing=missing, stale=stale, quarantined=quar,
         max_abs_diff=maxdiff,
         margins={f"{d}/{e}": {fm: dict(base={k: v for k, v in rows[fm]["base"].items()},
                                         edits={x: dict(total=rows[fm]["edits"][x]["m"]["total"], removed=rows[fm]["edits"][x]["removed"],

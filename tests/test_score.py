@@ -143,3 +143,23 @@ def test_summarize_separates_all_events_from_finite_scores():
     assert not s["all_finite"] and s["n_neg_inf"] == 1 and s["n_nonfinite"] == 1 and s["mean_finite"] == -1.0 and s["n"] == 2
     s = S.summarize(np.array([-1.0, np.nan]), np.array([True, False]))
     assert math.isnan(s["mean"]) and s["mean_tie"] == -1.0 and s["n_neg_inf"] == 0 and s["n_nonfinite"] == 1
+
+
+def test_invalid_inputs_raise():
+    law = lik.LogNormMix(torch.log(torch.tensor([1.0], dtype=torch.float64)), torch.tensor([0.0], dtype=torch.float64),
+                         torch.tensor([0.0], dtype=torch.float64))
+    tau = np.array([0.0, 1.0, 2.5])
+    for bad in (0.0, -0.1, float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            S.interval_loglik(law, tau, bad)
+    with pytest.raises(ValueError):
+        S.floor_loglik(law, tau, 0.0)
+    for g in (np.array([-1.0, 1.0]), np.array([float("nan"), 1.0]), np.array([float("inf"), 1.0])):
+        with pytest.raises(ValueError):
+            S.read_gaps(g)
+        with pytest.raises(ValueError):
+            S.interval_loglik_from_cdf(g, np.array([0.2, 0.2]), np.array([0.3, 0.3]))
+        with pytest.raises(ValueError):
+            S.interval_loglik(law, g, 1.0)
+    ll, tie = S.interval_loglik(law, tau, 1.0)
+    assert np.isfinite(ll).all() and tie.tolist() == [True, False, False]

@@ -587,10 +587,15 @@ def report_marks(run, audit):
     return L, dict(finished=st["finished"])
 
 
-def latent_rows(paths):
-    """Non-mismatching rows of the latent_scores.jsonl files of several runs, as result-like dicts keyed by
-    (dataset, encoder, arm, lr_tag, seed); by_selection.C holds dev_criterion, test {B, B_alt, C} and dev {B, B_alt}."""
-    out = {}
+LATENT_SCHEMA = 2       # rows of coarse_tpp.latent_score that carry B_alt
+
+
+def latent_rows(paths, with_stale=False):
+    """Rows of the latent_scores.jsonl files of several runs as result-like dicts keyed by (dataset, encoder, arm,
+    lr_tag, seed); by_selection.C holds dev_criterion, test {B, B_alt, C} and dev {B, B_alt}. Rows flagged mismatch
+    and rows of an older schema (without B_alt; they need re-scoring with coarse_tpp.latent_score) are left out;
+    with_stale=True also returns the number of such older rows."""
+    out, stale = {}, 0
     for p in paths:
         p = Path(p)
         if not p.exists():
@@ -601,12 +606,38 @@ def latent_rows(paths):
             r = json.loads(line)
             if r.get("mismatch"):
                 continue
+            if "B_alt" not in (r.get("test") or {}) or "B_alt" not in (r.get("dev") or {}):
+                stale += 1
+                continue
             c = r["config"]
             key = (c["dataset"], c["encoder"]["type"], r["arm"], c["lr_tag"], r["seed"])
             out[key] = dict(config=dict(dataset=c["dataset"], encoder=c["encoder"], head=c["head"], K=c["K"], lr_tag=c["lr_tag"]),
                             seed=r["seed"], arm=r["arm"], wall_sec=r.get("wall_sec"),
                             by_selection={"C": {"dev_criterion": r["dev_crit"], "test": r["test"], "dev": r["dev"]}})
-    return out
+    return (out, stale) if with_stale else out
+
+
+def grid_units(runs, arm="triangular", keep=lambda ds: True):
+    """(dataset, encoder) combinations planned for `arm` in the grids (grid.jsonl) of `runs`, independent of which
+    results exist: the expected population of a report never shrinks with missing results."""
+    out = set()
+    for run in runs:
+        p = Path(run) / "grid.jsonl"
+        if not p.exists():
+            continue
+        for line in p.read_text().splitlines():
+            if not line.strip():
+                continue
+            m = json.loads(line)
+            cfg = json.loads(Path(m["config"]).read_text())
+            if cfg.get("arm", m.get("arm")) == arm and keep(cfg["dataset"]):
+                out.add((cfg["dataset"], cfg["encoder"]["type"]))
+    return sorted(out)
+
+
+def is_recorded(ds: str) -> bool:
+    """A recorded data set of the paper (neither synthetic nor coarsened on purpose)."""
+    return not ds.startswith("synth_") and not ds.startswith("coarsened_")
 
 
 def report_coarsened(run, audit, latent=None, datasets=X.COARSENED, arms=X.COARSEN_ARMS):
@@ -695,11 +726,14 @@ def diff(sel, a, b, ka="B", kb="B"):
     return [val(sel[a][s], ka) - val(sel[b][s], kb) for s in seeds]
 
 
-def syn_units(cells):
-    """{(proc, delta): {realization data set: {arm: {seed: result}}}}, lr per (data set, arm) by dev C over the arm's seeds."""
+def syn_units(cells, settings=None):
+    """{(proc, delta): {realization data set: {arm: {seed: result}}}} over the synthetic main settings (default
+    Syn.main_settings()), lr per (data set, arm) by dev C over the arm's seeds."""
+    main = set(Syn.main_settings() if settings is None else settings)
     by = {}
     for (ds, enc, arm, lr, s), r in cells.items():
-        if Syn.parse(ds):
+        p = Syn.parse(ds)
+        if p and (p[0], p[2]) in main:
             by.setdefault(ds, {}).setdefault(arm, {}).setdefault(lr, {})[s] = r
     out = {}
     for ds, arms in by.items():
@@ -755,20 +789,26 @@ def cost_table(cells, ref_arm="jitter_gap"):
 
 
 def triangular_c_table(runs, seeds=X.REAL_SEEDS):
-    """Test C of the triangular objective against interval and jitter_gap on every (data set, encoder) that has a
-    triangular cell in `runs` (result.json values; no loss = one-sided lower bound >= LOSS_C against both)."""
+    """Test C of the triangular objective against interval and jitter_gap on the recorded data sets: the expected
+    combinations (data set, encoder) are those planned for the triangular arm on recorded data in the grids of `runs`
+    (the triangular_recorded experiment); synthetic and coarsened data never enter this table. Values are the
+    result.json of the runs; no loss = one-sided lower bound >= LOSS_C against both. Returns (status, lines, n_ok,
+    n_units); status is PENDING without a planned combination or with incomplete ones."""
+    units = grid_units(runs, keep=is_recorded)
     cells = {}
     for run in runs:
         if not (Path(run) / "grid.jsonl").exists():
             continue
         for x in load_cells(Path(run)):
-            if x["arm"] in ("triangular", "interval", "jitter_gap"):
-                c = x["config"]
+            c = x["config"]
+            if x["arm"] in ("triangular", "interval", "jitter_gap") and is_recorded(c["dataset"]):
                 cells[(c["dataset"], c["encoder"]["type"], x["arm"], c["lr_tag"], x["seed"])] = x
-    units = sorted({(ds, enc) for (ds, enc, a, lr, s) in cells if a == "triangular"})
     L = ["| data set | encoder | test ties | n | triangular - interval | lower | triangular - jitter_gap | lower | no loss |",
          "|---|---|---:|---:|---:|---:|---:|---:|---|"]
-    status, n_ok = (True if units else PENDING), 0
+    if not units:
+        return PENDING, L + ["", "No grid with the triangular arm on recorded data among the runs (pass the triangular_recorded "
+                             "run with --base): pending."], 0, 0
+    status, n_ok = True, 0
     for ds, enc in units:
         sel, missing = unit_select(cells, ds, enc, ("triangular", "interval", "jitter_gap"), seeds)
         if sel is None:
@@ -784,7 +824,7 @@ def triangular_c_table(runs, seeds=X.REAL_SEEDS):
             status = False
         L.append(f"| {ds} | {enc} | {tie:.3f} | {s1['n']} | {fmt(s1['mean'])} | {fmt(s1['lower'])} | {fmt(s2['mean'])} | "
                  f"{fmt(s2['lower'])} | {'yes' if nl else '**no**'} |")
-    L.append(f"\nNo loss on {n_ok}/{len(units)} combinations.")
+    L.append(f"\nNo loss on {n_ok}/{len(units)} planned combinations.")
     return status, L, n_ok, len(units)
 
 
@@ -793,15 +833,18 @@ def report_triangular(run, bases=(), seeds=X.REAL_SEEDS):
     readouts, from the latent_scores.jsonl files of `run` and `bases`), on B of the synthetic settings, and on C of the
     recorded data (result.json of the runs). The decision rule was fixed before the runs (Supplementary S4)."""
     runs = [Path(run)] + [Path(b) for b in bases]
-    cells = latent_rows([r / "latent_scores.jsonl" for r in runs])
-    tri_units = sorted({(ds, enc) for (ds, enc, a, lr, s) in cells if a == "triangular" and ds.startswith("coarsened_")})
+    cells, stale = latent_rows([r / "latent_scores.jsonl" for r in runs], with_stale=True)
+    tri_units = grid_units(runs, keep=lambda ds: ds.startswith("coarsened_"))      # planned, not merely scored
     L = ["# Triangular-kernel likelihood against the other treatments", "",
          "Exploratory comparison (Supplementary S4). B = log q_B(s) of the latent time since the last record, on the test "
          "split; learning rate per unit by dev C on the common seed set; real units seed-paired, synthetic settings paired "
          "over realizations. better = one-sided 95% lower bound > 0 and mean >= 0.01 nats. jitter_time shares the smoothed "
          "readout but also jitters the inputs; iw_jitter_triangular keeps the recorded inputs.",
          f"Latent scores read from: {', '.join(str(r) for r in runs if (r / 'latent_scores.jsonl').exists())}; "
-         f"{len(cells)} cells without mismatch.", ""]
+         f"{len(cells)} cells without mismatch" + (f"; {stale} rows of an older schema without B_alt left out (re-score them "
+                                                   "with coarse_tpp.latent_score)" if stale else "") + ".",
+         f"Planned coarsened combinations with the triangular arm (from the grids): {len(tri_units)}"
+         + ("" if tri_units else " — none found: pass the triangular_coarsened / coarsened_more runs; verdict pending") + ".", ""]
     summary = dict(real=[], syn=[])
     L += ["## 1. Coarsened real data", "",
           "| data set | r | encoder | n | B triangular | B jitter_time | - jitter_time | lower | better | best readout | - best | lower | better | "
@@ -829,7 +872,7 @@ def report_triangular(run, bases=(), seeds=X.REAL_SEEDS):
         summary["real"].append(dict(dataset=ds, r=r, encoder=enc, status="complete", a=better(da), b=better(db),
                                     a_stat=tstat(da), b_stat=tstat(db), baseline=list(br)))
     syn = syn_units(cells)
-    L += ["", "## 2. Synthetic main settings (paired over realizations; seeds common to both arms)", "",
+    L += ["", "## 2. Synthetic main settings (Syn.main_settings(); paired over realizations; seeds common to both arms)", "",
           "| process | delta | - jitter_time (n) | lower | better | - best readout (n) | lower | better | - jitter_gap | - interval | " +
           " | ".join(f"- {s}" for s in X.TRI_IW_ARMS) + " | realizations skipped (a / b) |",
           "|---|---:|---:|---:|---|---:|---:|---|---:|---:|" + "---:|" * len(X.TRI_IW_ARMS) + "---|"]
@@ -859,7 +902,7 @@ def report_triangular(run, bases=(), seeds=X.REAL_SEEDS):
     else:
         verdict = bool(n_both >= need and noloss is True)
     L += ["", "## 5. Decision rule (fixed before the runs)", "",
-          f"coarsened units with r >= 0.3: {len(elig)} (complete {len(comp)}, pending {len(pend)}); better than jitter_time: {n_a}; "
+          f"planned coarsened units with r >= 0.3: {len(elig)} (complete {len(comp)}, pending {len(pend)}); better than jitter_time: {n_a}; "
           f"better than jitter_time AND than the best-readout baseline: {n_both} (needed: {need}); recorded-data C without loss on "
           f"every combination: {noloss} ({n_ok}/{n_units})", f"**condition met: {verdict}**"]
     summary.update(verdict=verdict, n_eligible=len(elig), n_pending=len(pend), n_better_a=n_a, n_both_better=n_both, needed=need,
