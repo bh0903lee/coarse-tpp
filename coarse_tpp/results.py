@@ -8,12 +8,24 @@ file, other cell, different config, wrong event count) is invalid and the cell i
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 from pathlib import Path
 
 REQUIRED = ("ll",)
 FINISHED = ("ok", "ok_walltime")
 TERMINAL_BAD = ("invalid_metrics",)
+
+
+def checkpoint_identity(cfg, res, selection):
+    """Identity of a current checkpoint and its configuration; None if unavailable."""
+    ck = Path(cfg["out_dir"]) / f"best_{selection}.pt"
+    selected = res.get("by_selection", {}).get(selection)
+    if not ck.exists() or selected is None:
+        return None
+    return dict(config_sha256=hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest(),
+                ckpt_sha256=hashlib.sha256(ck.read_bytes()).hexdigest(),
+                selected_epoch=selected.get("selected_epoch"), selection=selection)
 
 
 def nonfinite_metrics(res: dict) -> list:

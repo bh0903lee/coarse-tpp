@@ -80,6 +80,16 @@ def status_lines(st):
             f"grid finished: {st['finished']}", ""]
 
 
+def planned_groups(run):
+    """Groups in the grid, including those without any usable result."""
+    groups = set()
+    for line in (Path(run) / "grid.jsonl").read_text().splitlines():
+        if line.strip():
+            cfg = json.loads(Path(json.loads(line)["config"]).read_text())
+            groups.add(cell_key(cfg)[0])
+    return sorted(groups)
+
+
 def unit_key(res):
     c = res["config"]
     return (c["dataset"], c["encoder"]["type"], c["head"], c["K"], res["arm"])
@@ -180,7 +190,7 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
     treatments by the floor score (eps = 1e-6) and by C."""
     cells, st = load_cells(run, with_status=True)
     units = select_lr(cells)
-    groups = sorted({u[:4] for u in units})
+    groups = planned_groups(run)
     non = [m for m in arms if m != "interval"]
     tie = lambda ds: audit.get(ds, {}).get("tie_share", NAN)
     L = [f"# {title}", "", "Score: test C (recorded-cell log-likelihood per event) at the dev-C learning rate; seed-paired.", ""]
@@ -209,7 +219,7 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
     n_better = 0
     for (g, best, d), a in zip(fam, adj):
         if not d:
-            L.append(f"| {g[0]} | {g[1]} | {g[2]} | missing | | | | |"); continue
+            L.append(f"| {g[0]} | {g[1]} | {g[2]} | pending (missing cells) | | | 1 | no |"); continue
         if len(d) < MIN_SEEDS:
             L.append(f"| {g[0]} | {g[1]} | {g[2]} | {best} | not judged (n = {len(d)}) | | | no |"); continue
         m, lo, _ = t_one_sided(d)
@@ -223,7 +233,7 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
     for g in groups:
         s, mu, lo, hi = lo_str(paired(units, g + ("interval",), g + ("floor_1e-10",)), MIN_SEEDS)
         if s == "—":
-            continue
+            s = "pending (missing cells)"
         stt = state(lo, hi); counts[stt] += 1; pres["|".join(map(str, g))] = dict(mean=mu, lo=lo, hi=hi, state=stt)
         L.append(f"- {g[0]} {g[1]} {g[2]}: {s} {stt}")
     L += ["", "Differences to the other treatments (interval - treatment, test C):", ""]
@@ -291,17 +301,23 @@ def report_intensity(run, audit):
     L += ["", "## Per head: interval - strongest non-interval treatment on all six data sets (Holm within the head)", ""]
     for h in X.INTENSITY_HEADS:
         fam = []
-        for ds in X.INTENSITY_DATASETS:
-            g = (ds, "gru", h, 8)
+        for g in planned_groups(run):
+            if g[2] != h:
+                continue
+            ds = g[0]
             cand = [(dev_c(units[g + (m,)]), m) for m in base if g + (m,) in units]
             if len(cand) == len(base) and g + ("interval",) in units:
                 best = max(cand)[1]
                 d = paired(units, g + ("interval",), g + (best,))
-                if d and len(d) >= MIN_SEEDS:
-                    fam.append((ds, best, d))
-        adj = holm([t_one_sided(d)[2] for _, _, d in fam]) if fam else []
+                fam.append((ds, best, d))
+            else:
+                fam.append((ds, None, None))
+        adj = holm([t_one_sided(d)[2] if d and len(d) >= MIN_SEEDS else 1.0 for _, _, d in fam]) if fam else []
         nb = 0
         for (ds, best, d), a in zip(fam, adj):
+            if not d or len(d) < MIN_SEEDS:
+                L.append(f"- {h} {ds}: pending (n = {len(d or [])}); Holm family p = 1")
+                continue
             m, lo, _ = t_one_sided(d); ok = bool(a < 0.05 and m >= 0.01); nb += ok
             L.append(f"- {h} {ds}: vs {best} {fmt(m)} (lower {fmt(lo)}, Holm p {a:.3g}) {'better' if ok else ''}")
         summ[f"{h}_better_all"] = f"{nb}/{len(fam)}"
@@ -590,6 +606,20 @@ def report_marks(run, audit):
 LATENT_SCHEMA = 2       # rows of coarse_tpp.latent_score that carry B_alt
 
 
+def latent_identity_current(row):
+    """Validate checkpoint-bound rows. Rows without an identity (deposited rows, or rows written before version 1.1.2)
+    remain readable but are not checked against the current checkpoint; re-score them to validate."""
+    if "identity" not in row:
+        return True
+    source = Path(row.get("source_config", ""))
+    if not source.is_file():
+        return False
+    cfg = json.loads(source.read_text())
+    state, _, res = R.load(cfg)
+    return bool(state == "ok" and row["identity"] is not None
+                and row["identity"] == R.checkpoint_identity(cfg, res, "C"))
+
+
 def latent_rows(paths, with_stale=False):
     """Rows of the latent_scores.jsonl files of several runs as result-like dicts keyed by (dataset, encoder, arm,
     lr_tag, seed); by_selection.C holds dev_criterion, test {B, B_alt, C} and dev {B, B_alt}. Rows flagged mismatch
@@ -604,7 +634,7 @@ def latent_rows(paths, with_stale=False):
             if not line.strip():
                 continue
             r = json.loads(line)
-            if r.get("mismatch"):
+            if r.get("mismatch") or not latent_identity_current(r):
                 continue
             if "B_alt" not in (r.get("test") or {}) or "B_alt" not in (r.get("dev") or {}):
                 stale += 1
@@ -649,7 +679,7 @@ def report_coarsened(run, audit, latent=None, datasets=X.COARSENED, arms=X.COARS
     rows = [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
     good = [dict(config=r["config"], seed=r["seed"], arm=r["arm"],
                  by_selection={"C": {"dev_criterion": r["dev_crit"], "test": dict(B=r["test"]["B"], C=r["test"]["C"])}})
-            for r in rows if not r["mismatch"]]
+            for r in rows if not r["mismatch"] and latent_identity_current(r)]
     units = select_lr(good)
     others = [a for a in arms if a not in ("interval", "floor_1e-6", "floor_1e-5")]
     L += ["", f"## Latent-time score B ({len(good)} of {len(rows)} cells reproduce their stored C)", ""]

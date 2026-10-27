@@ -46,6 +46,7 @@ from . import data as D
 from . import experiments as X
 from . import lik
 from . import readout as Ro
+from . import results as R
 from .data import coarse_stats, load, score_mask
 from .models import build
 
@@ -257,7 +258,7 @@ def score_cell(res, device):
     return dict(cell_id=res["cell_id"], dataset=ds, encoder=u[1], head=u[2], K=u[3], arm=res["arm"],
                 treatment=cfg["treatment"], rule=rule, seed=res["seed"], lr_tag=cfg["lr_tag"], delta=delta,
                 n_events=P["n"], C_recomputed=P["C_mean"], C_stored=stored, C_absdiff=diff,
-                quarantined=bool(diff > C_TOL),
+                quarantined=bool(diff > C_TOL), identity=R.checkpoint_identity(cfg, res, "C"),
                 floor_stored=float(res["by_selection"]["C"]["test"]["floor_1e-6"]), **met)
 
 
@@ -279,7 +280,10 @@ def score(run, only=None, limit=None, force=False):
     for i, res in enumerate(cells):
         p = od / f"{res['cell_id']}.json"
         if p.exists() and not force:
-            continue
+            cached = json.loads(p.read_text())
+            identity = R.checkpoint_identity(res["config"], res, "C")
+            if identity is not None and cached.get("identity") == identity:
+                continue
         t0 = time.time()
         r = score_cell(res, device)
         r["wall_sec"] = round(time.time() - t0, 1)
@@ -345,13 +349,17 @@ def summarize(rows, audit, arms=X.RANK_ARMS, n_seeds=len(X.REAL_SEEDS), controls
 def report(run, audit_path=None, **kw):
     run = Path(run)
     cells = selected_cells(run)
-    rows, missing = {}, []
+    rows, missing, stale = {}, [], []
     for res in cells:
         p = run / "predictive" / "cells" / f"{res['cell_id']}.json"
         if p.exists():
-            rows[res["cell_id"]] = json.loads(p.read_text())
-        else:
-            missing.append(res["cell_id"])
+            row = json.loads(p.read_text())
+            identity = R.checkpoint_identity(res["config"], res, "C")
+            if identity is not None and row.get("identity") == identity:
+                rows[res["cell_id"]] = row
+                continue
+            stale.append(res["cell_id"])
+        missing.append(res["cell_id"])
     quarantined = sorted(k for k, r in rows.items() if r["quarantined"])
     good = [r for r in rows.values() if not r["quarantined"]]
     audit = A.audit_rows(audit_path)
@@ -370,6 +378,8 @@ def report(run, audit_path=None, **kw):
          f"Cells with a non-finite predictive mean for some event: {sum(r['n_mean_nonfinite'] > 0 for r in rows.values())}.", ""]
     if quarantined:
         L += ["Quarantined: " + ", ".join(quarantined), ""]
+    if stale:
+        L += ["Stale or unidentified scores (re-run score): " + ", ".join(stale), ""]
     if incomplete:
         L += ["Incomplete groups (left out): " + ", ".join(f"{x['dataset']}/{x['encoder']}" for x in incomplete), ""]
     L += ["## 1. Top treatment by the floor score (floor_1e-6) and by the interval score (C): seed means; "
