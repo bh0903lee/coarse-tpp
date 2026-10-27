@@ -460,10 +460,21 @@ def rt_collect(out_dir: Path, seeds_res: dict, sel: str):
         if not p.exists():
             pending.append(f"s{s}: no RT file"); continue
         j = json.loads(p.read_text())
-        if j.get("version") != VERSION:
+        if not rt_identity_ok(j, r, sel):
             pending.append(f"s{s}: stale RT file"); continue
         rows.append(j)
     return rows, pending
+
+
+def rt_identity_ok(row, res, sel):
+    """An RT result must describe the currently selected checkpoint."""
+    if (not res.get("config") or row.get("version") != VERSION
+            or row.get("cell_id") != res.get("cell_id") or row.get("sel") != sel):
+        return False
+    ck = Path(res["config"]["out_dir"]) / f"best_{sel}.pt"
+    selected = res.get("by_selection", {}).get(sel)
+    return bool(selected is not None and ck.exists() and row.get("ckpt_sha256") == ckpt_sha(ck)
+                and row.get("selected_epoch") == selected.get("selected_epoch"))
 
 
 # ------------------------------------------------------------------ scoring
@@ -751,7 +762,7 @@ def cmd_score(a):
             if p.exists() and not a.force:
                 try:
                     old = json.loads(p.read_text())
-                    if old.get("version") == VERSION and (old.get("complete") or a.rt_max_cases is not None):
+                    if rt_identity_ok(old, res, sel) and (old.get("complete") or a.rt_max_cases is not None):
                         continue
                 except Exception:
                     pass
@@ -760,6 +771,7 @@ def cmd_score(a):
             v = sla_record(out_dir, res["cell_id"])["by_sel"][sel]
             n_seq = len(load(res["config"]["dataset"], "test").coarse)
             summ.update(wall_sec=round(time.time() - t0, 1), version=VERSION, complete=bool(a.rt_max_cases is None or n_cases >= n_seq),
+                        ckpt_sha256=v["ckpt_sha256"], selected_epoch=v["selected_epoch"],
                         verified_snapshot=dict(C_absdiff=v["C_absdiff"], cell_max_tol_ratio=v["cell_max_tol_ratio"]))
             np.savez_compressed(out_dir / "rt" / f"{res['cell_id']}__{sel}.npz",
                                 n=seq_sums(arr["case"], n_seq, np.ones(len(arr["case"]))),

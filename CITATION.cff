@@ -10,7 +10,7 @@ authors:
     given-names: "Hwa Jeon"
     affiliation: "Electronics and Telecommunications Research Institute (ETRI)"
 license: MIT
-version: "1.1.1"
+version: "1.1.2"
 preferred-citation:
   type: article
   title: "Ties, Time Grids and the Likelihood: Evaluating Neural Temporal Point Processes on Coarsely Recorded Data"

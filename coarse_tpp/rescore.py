@@ -11,7 +11,8 @@ model was trained on. Scores (mean per target event, with tie / non-tie means): 
 (density at max(tau~, eps)) and, with the audited delta of the data set (else the cell's delta, if positive), interval (log P(tau~ <= tau < tau~ + delta)).
 Recorded gaps stored as <= 1.000001e-6 are ties. For models trained and selected by the floor 1e-6 log-likelihood
 (selection "own" of treatment floor, eps = 1e-6) the recomputed dev score is compared with the stored dev criterion.
-Writes RUN_DIR/rescore.jsonl; a later call resumes it and stops if a stored row has another selection or delta.
+Writes RUN_DIR/rescore.jsonl; a later call resumes only rows matching the current config, checkpoint and valid
+result, and stops if a stored row has another selection or delta.
 
 report: test scores of the same models under the three floors and the interval score (mean over seeds, per data set
 and learning rate), the seed-paired comparison of two head parameterizations under each score (learning rate per
@@ -93,13 +94,14 @@ def score(run, selection="own", audit_path=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dst = run / "rescore.jsonl"
     done = {}
-    if dst.exists():
-        for x in dst.read_text().splitlines():
-            if x.strip():
-                r = json.loads(x)
-                done[r["cell_id"]] = (r.get("selection"), r.get("delta"))
+    for src in (dst, dst.with_suffix(".tmp")):        # .tmp: rows of an interrupted call, newer than dst
+        if src.exists():
+            for x in src.read_text().splitlines():
+                if x.strip():
+                    r = json.loads(x)
+                    done[r["cell_id"]] = r
     cache = {}
-    with open(dst, "a") as fh:
+    with open(dst.with_suffix(".tmp"), "w") as fh:
         for line in (run / "grid.jsonl").read_text().splitlines():
             if not line.strip():
                 continue
@@ -108,11 +110,11 @@ def score(run, selection="own", audit_path=None):
             delta = (audit.get(cfg["dataset"]) or {}).get("delta") or (float(cfg["delta"]) if float(cfg["delta"]) > 0 else None)
             if m["cell_id"] in done:
                 # resume only with the same selection and delta; never mix rows of different settings in one file
-                if done[m["cell_id"]] != (selection, delta):
-                    sel0, d0 = done[m["cell_id"]]
+                old = done[m["cell_id"]]
+                if (old.get("selection"), old.get("delta")) != (selection, delta):
+                    sel0, d0 = old.get("selection"), old.get("delta")
                     raise SystemExit(f"{dst} holds {m['cell_id']} with selection {sel0}, delta {d0}; this call asks for "
                                      f"selection {selection}, delta {delta}. Move or remove {dst} to re-score.")
-                continue
             cdir = Path(cfg["out_dir"])
             ck = cdir / f"best_{selection}.pt"
             st, why, res = R.load(cfg)                 # the validity rule of the reports: status ok, same config, counts
@@ -124,18 +126,42 @@ def score(run, selection="own", audit_path=None):
             if not ck.exists():
                 print(f"{m['cell_id']}: skipped, no checkpoint {ck.name}", flush=True)
                 continue
+            identity = R.checkpoint_identity(cfg, res, selection)
+            old = done.get(m["cell_id"])
+            if identity is not None and old and old.get("identity") == identity:
+                fh.write(json.dumps(old) + "\n"); fh.flush()
+                continue
             r = dict(cell_id=m["cell_id"], arm=cfg["arm"], dataset=cfg["dataset"], seed=cfg["seed"], lr_tag=cfg["lr_tag"],
-                     selection=selection, delta=delta, **score_cell(cfg, ck, delta, device, cache))
+                     selection=selection, delta=delta, identity=identity, **score_cell(cfg, ck, delta, device, cache))
             if selection == "own" and cfg["treatment"] == "floor" and cfg.get("eps") == 1e-6:
                 stored = res["by_selection"][selection]["dev_criterion"]          # the dev floor 1e-6 log-likelihood
                 r["check"] = dict(stored_dev=stored, abs_diff=abs(r["dev"]["floor_1e-6"] - stored))
             fh.write(json.dumps(r) + "\n"); fh.flush()
             print(f"{m['cell_id']}: dev floor_1e-6 {r['dev']['floor_1e-6']:.6f}, test interval {r['test'].get('interval')}", flush=True)
+    dst.with_suffix(".tmp").replace(dst)
 
 
 # ------------------------------------------------------------------ report
 def load_rows(run):
-    return [json.loads(x) for x in (Path(run) / "rescore.jsonl").read_text().splitlines() if x.strip()]
+    """Current checkpoint scores for a training run, or deposited rows when no grid is distributed."""
+    run = Path(run)
+    rows = [json.loads(x) for x in (run / "rescore.jsonl").read_text().splitlines() if x.strip()]
+    if not (run / "grid.jsonl").exists():
+        return rows
+    configs = {m["cell_id"]: json.loads(Path(m["config"]).read_text())
+               for m in (json.loads(x) for x in (run / "grid.jsonl").read_text().splitlines() if x.strip())}
+    valid = []
+    for row in rows:
+        cfg = configs.get(row["cell_id"])
+        if cfg is None:
+            continue
+        state, _, res = R.load(cfg)
+        if state != "ok":
+            continue
+        identity = R.checkpoint_identity(cfg, res, row.get("selection"))
+        if identity is not None and row.get("identity") == identity:
+            valid.append(row)
+    return valid
 
 
 def by_seed(rows, arm, ds, key):
@@ -182,6 +208,8 @@ def report(run, compare_arms=None, tied_min=0.01):
          "## Test log-likelihood per event of the same models under three floors and the interval score (mean over seeds)", "",
          "| data set | model | lr | ties (test) | floor 1e-10 | floor 1e-6 | floor 1e-5 | interval | spread over floors |",
          "|---|---|---|---:|---:|---:|---:|---:|---:|"]
+    if not (Path(run) / "grid.jsonl").exists():
+        L.insert(2, "Deposited score table: no training grid is available for current-checkpoint identity validation.\n")
     groups = {}
     for r in rows:
         groups.setdefault((r["dataset"], r["arm"], r["lr_tag"]), []).append(r)

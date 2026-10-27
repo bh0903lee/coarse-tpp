@@ -6,7 +6,7 @@ The coarsened data sets keep the original time of every event (time_since_start_
 so the latent time since the last recorded time, s_i = t_fine_i - t~_{i-1}, is known and B = log q_B(s_i) can be
 computed with the readout of each treatment (coarse_tpp.readout); the synthetic data sets carry s_i directly. For
 every finished cell of the grid whose data set has latent times, the primary checkpoint best_C.pt is rebuilt and
-scored on dev and test:
+scored on dev and test. Cached rows are reused only for a valid result with the same config and checkpoint:
   C       recorded-cell score under the treatment's readout (a check: it must reproduce result.json within TOL,
           else the cell is flagged (mismatch) and left out of the tables)
   B       log q_B(s_i) under the treatment's readout (readout.RULE)
@@ -27,6 +27,7 @@ import torch
 
 from . import data as D
 from . import readout as Ro
+from . import results as R
 from .data import coarse_stats, load, load_fine_s, score_mask
 from .models import build
 
@@ -118,22 +119,31 @@ def main(argv=None):
     a = ap.parse_args(argv)
     run = Path(a.run)
     dst = Path(a.out) if a.out else run / "latent_scores.jsonl"
-    done = set(fresh_rows(dst))
+    done = fresh_rows(dst)
+    tmp = dst.with_suffix(".tmp")                    # rows of an interrupted call, newer than dst
+    if tmp.exists():
+        done.update({r["cell_id"]: r for r in (json.loads(x) for x in tmp.read_text().splitlines() if x.strip())
+                     if current(r)})
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     cache = {}
-    with open(dst, "a") as fh:
+    with open(dst.with_suffix(".tmp"), "w") as fh:
         for line in (run / "grid.jsonl").read_text().splitlines():
             if not line.strip():
                 continue
             m = json.loads(line)
-            if m["cell_id"] in done or not has_latent(m["dataset"]):
+            if not has_latent(m["dataset"]):
                 continue
             cfg = json.loads(Path(m["config"]).read_text())
             cdir = Path(cfg["out_dir"])
             if not (cdir / "result.json").exists() or not (cdir / "best_C.pt").exists():
                 continue
-            res = json.loads((cdir / "result.json").read_text())
-            if res.get("status") != "ok" or res.get("primary_selection", "C") != "C":
+            state, _, res = R.load(cfg)
+            if state != "ok" or res.get("primary_selection", "C") != "C":
+                continue
+            identity = R.checkpoint_identity(cfg, res, "C")
+            old = done.get(m["cell_id"])
+            if identity is not None and old and old.get("identity") == identity:
+                fh.write(json.dumps(old) + "\n"); fh.flush()
                 continue
             ds = cfg["dataset"]
             if ds not in cache:
@@ -143,7 +153,7 @@ def main(argv=None):
             model = build(cfg, stats, tr.coarse.n_types).to(device)
             model.load_state_dict(torch.load(cdir / "best_C.pt", map_location=device, weights_only=True))
             rule = Ro.RULE[cfg["treatment"]]
-            r = dict(schema=SCHEMA, cell_id=m["cell_id"], experiment=cfg.get("experiment"), arm=cfg["arm"], dataset=ds, seed=cfg["seed"],
+            r = dict(schema=SCHEMA, identity=identity, source_config=m["config"], cell_id=m["cell_id"], experiment=cfg.get("experiment"), arm=cfg["arm"], dataset=ds, seed=cfg["seed"],
                      config=dict(dataset=ds, encoder=cfg["encoder"], head=cfg["head"], K=cfg["K"], lr_tag=cfg["lr_tag"],
                                  treatment=cfg["treatment"], delta=cfg["delta"], iw_samples=cfg.get("iw_samples")),
                      rule=rule, alt_rule=Ro.ALT[rule], dev_crit=res["by_selection"]["C"]["dev_criterion"],
@@ -154,6 +164,7 @@ def main(argv=None):
             fh.write(json.dumps(r) + "\n"); fh.flush()
             print(f"{m['cell_id']} test B {r['test']['B']:.5f} B_alt {r['test']['B_alt']:.5f} C check {r['check']['test']:.1e}"
                   f"{' MISMATCH' if r['mismatch'] else ''}", flush=True)
+    dst.with_suffix(".tmp").replace(dst)
 
 
 if __name__ == "__main__":

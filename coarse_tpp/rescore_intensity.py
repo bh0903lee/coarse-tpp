@@ -21,6 +21,7 @@ training log reports event counts different from the data files (more than one e
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -190,6 +191,14 @@ def candidates(ckpt: Path, ds, model_id):
     return sorted(p for p in (ckpt / ds / model_id).glob("*") if (p / "saved_model.pt").exists())
 
 
+def checkpoint_identity(candidate):
+    """Fingerprint the mutable EasyTPP run's configuration and saved weights."""
+    paths = {"config_sha256": candidate / "config.yaml", "ckpt_sha256": candidate / "saved_model.pt"}
+    if not all(p.is_file() for p in paths.values()):
+        return None
+    return {key: hashlib.sha256(p.read_bytes()).hexdigest() for key, p in paths.items()}
+
+
 def score(ckpt, out, datasets=None, nodes=32, audit_path=None):
     ckpt, out = Path(ckpt), Path(out)
     audit = audit_rows(audit_path)
@@ -201,14 +210,16 @@ def score(ckpt, out, datasets=None, nodes=32, audit_path=None):
         for model_id in MODELS:
             for cand in candidates(ckpt, ds, model_id):
                 dst = out / "cells" / f"{ds}__{model_id}__{cand.name}.json"
+                identity = checkpoint_identity(cand)
                 if dst.exists():
                     r = json.loads(dst.read_text())
-                    if r.get("nodes") == nodes and r.get("delta") == delta:
+                    if (identity is not None and r.get("identity") == identity
+                            and r.get("nodes") == nodes and r.get("delta") == delta):
                         continue
                 cfg = yaml.safe_load((cand / "config.yaml").read_text())
                 model = build_model(model_id, cfg, device)
                 model.load_state_dict(torch.load(cand / "saved_model.pt", map_location=device, weights_only=True))
-                r = dict(dataset=ds, model=model_id, candidate=cand.name, delta=delta, nodes=nodes,
+                r = dict(dataset=ds, model=model_id, candidate=cand.name, delta=delta, nodes=nodes, identity=identity,
                          n_params=sum(p.numel() for p in model.parameters()))
                 for sp, (seqs, _) in splits.items():
                     r[sp] = score_split(model, model_id, seqs, cfg["model_config"]["event_pad_index"], delta, nodes, device)
@@ -238,12 +249,18 @@ def current_counts(ds):
 
 def select(cells, ckpt: Path):
     """{(ds, model): chosen cell} by the dev floor_1e-6 score among runs with finite scores whose training log (if
-    any) matches the event counts of the data files."""
+    any) matches the event counts of the data files, with verified current configuration and weights.
+    Unidentified legacy package caches must be re-scored; deposited archive scripts remain separate."""
     out, cur = {}, {}
     for c in cells:
+        cand = ckpt / c["dataset"] / c["model"] / c["candidate"]
+        identity = checkpoint_identity(cand)
+        c["stale"] = identity is None or c.get("identity") != identity
+        if c["stale"]:
+            continue
         if any(c[s].get("floor_1e-6") is None or not math.isfinite(c[s]["floor_1e-6"]) for s in ("dev", "test")):
             continue
-        lc = logged_counts(ckpt / c["dataset"] / c["model"] / c["candidate"])
+        lc = logged_counts(cand)
         if lc:
             cur.setdefault(c["dataset"], current_counts(c["dataset"]))
             if not all(lc[sp] is None or abs(lc[sp] - cur[c["dataset"]][sp]) <= 1 for sp in ("train", "test")):
@@ -269,8 +286,12 @@ def report(ckpt, out):
     cells = [json.loads(p.read_text()) for p in sorted((out / "cells").glob("*.json"))]
     sel = select(cells, Path(ckpt))
     L = ["# Re-scoring of trained intensity-based models", "",
-         f"runs scored: {len(cells)}; excluded (training log does not match the data files): "
+         f"runs scored: {len(cells)}; stale or unidentified: {sum(bool(c.get('stale')) for c in cells)}; "
+         "excluded (training log does not match the data files): "
          f"{sum(bool(c.get('excluded')) for c in cells)}; chosen per (data set, model) by dev floor_1e-6. Mean per target event.", ""]
+    if any(c.get("stale") for c in cells):
+        L += ["Re-run score to refresh stale or unidentified package caches. "
+              "Deposited archive tables use the archive's own reporting script.", ""]
     same = 0
     for ds in sorted({c["dataset"] for c in cells}):
         rows = {m: sel.get((ds, m)) for m in MODELS}

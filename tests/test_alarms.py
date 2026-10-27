@@ -147,12 +147,17 @@ def _write(p, obj):
 
 
 def test_rt_requires_a_verified_checkpoint_and_quarantine_is_not_a_cache(tmp_path):
-    seeds_res = {s: dict(cell_id=f"c{s}") for s in K.PLANNED_SEEDS}
-    rt = dict(version=K.VERSION, complete=True, mae_median=123.0)
+    seeds_res = {}
     for s in K.PLANNED_SEEDS:
+        cdir = tmp_path / f"c{s}"; cdir.mkdir()
+        ck = cdir / "best_C.pt"; ck.write_bytes(b"checkpoint identity")
+        seeds_res[s] = dict(cell_id=f"c{s}", config=dict(out_dir=str(cdir)), by_selection=dict(C=dict(selected_epoch=1)))
+        ident = dict(selected_epoch=1, ckpt_sha256=K.ckpt_sha(ck))
+        rt = dict(version=K.VERSION, cell_id=f"c{s}", sel="C", complete=True, mae_median=123.0, **ident)
         q = s == 2
         _write(tmp_path / "cells" / f"c{s}.json", dict(version=K.VERSION, quarantined_sels=["C"] if q else [],
-                                                        by_sel=dict(C=dict(missing=False, quarantined=q, C_absdiff=1.0 if q else 0.0))))
+                                                        by_sel=dict(C=dict(missing=False, quarantined=q, C_absdiff=1.0 if q else 0.0, **ident),
+                                                                    own=dict(missing=True))))
         _write(tmp_path / "rt" / f"c{s}__C.json", rt)
     rows, pend = K.rt_collect(tmp_path, seeds_res, "C")
     assert len(rows) == 4 and pend == ["s2: quarantined"]

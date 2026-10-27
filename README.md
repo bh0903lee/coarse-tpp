@@ -29,7 +29,7 @@ Python 3.10. CPU is enough for the quick start; the full grids were run on GPUs.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # torch 2.6.0; pick the CUDA or CPU wheel for your machine
 pip install -e .                         # optional: installs the package coarse_tpp
-python -m pytest -q tests                # 123 tests, CPU, about two minutes
+python -m pytest -q tests                # unit and integration tests, CPU, about two minutes
 ```
 
 The scripts in `scripts/` work from the repository root without installation. Data live in `./data` (or the
@@ -141,6 +141,13 @@ rules and score checks.
 Results are deterministic for a given device and library version (seeded data order, initialization and jitter
 draws). Evaluating a trained model on another device changes the scores in the 6th to 8th decimal (float32 encoders;
 floor scores of very narrow mixture components can move by up to about 1e-4).
+
+Cached scores (`rescore.jsonl`, `latent_scores.jsonl`, predictive, remaining-time and intensity score files) record
+the configuration and checkpoint they were computed from (since version 1.1.2) and are reused or reported only while
+these still match. Files written by earlier versions carry no such record: re-run the scoring command to validate
+them; until then the reports show them as stale or pending, except latent-time rows, which stay readable without
+this check. An interrupted scoring call resumes from its `.tmp` file. The deposited trained-models archive is
+unaffected.
 
 ## Reproduction scope
 

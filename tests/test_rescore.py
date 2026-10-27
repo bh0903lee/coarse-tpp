@@ -4,14 +4,21 @@ import json
 import pytest
 
 from coarse_tpp import rescore as RS
+from coarse_tpp import results as R
 
 
 def test_rescore_refuses_rows_of_another_selection(tmp_path):
     run = tmp_path / "run"; run.mkdir()
-    cfg = dict(dataset="email_eu", delta=1.0, out_dir=str(run / "cells" / "c0"), head="mix")
+    cfg = dict(cell_id="c0", dataset="email_eu", delta=1.0, out_dir=str(run / "cells" / "c0"), head="mix")
+    cdir = run / "cells" / "c0"; cdir.mkdir(parents=True)
+    (cdir / "best_C.pt").write_bytes(b"checkpoint identity")
+    res = dict(cell_id="c0", config=cfg, status="ok", test=dict(ll=-1, n_events=5), dev=dict(ll=-1),
+               expected_test_targets=5, by_selection=dict(C=dict(selected_epoch=1)))
+    (cdir / "result.json").write_text(json.dumps(res))
     (run / "c0.json").write_text(json.dumps(cfg))
     (run / "grid.jsonl").write_text(json.dumps(dict(cell_id="c0", config=str(run / "c0.json"))) + "\n")
-    (run / "rescore.jsonl").write_text(json.dumps(dict(cell_id="c0", selection="C", delta=1.0)) + "\n")
+    (run / "rescore.jsonl").write_text(json.dumps(dict(cell_id="c0", selection="C", delta=1.0,
+                                                     identity=R.checkpoint_identity(cfg, res, "C"))) + "\n")
     RS.score(run, selection="C", audit_path=tmp_path / "none.json")          # same setting: resumes, nothing to do
     with pytest.raises(SystemExit, match="selection C"):
         RS.score(run, selection="own", audit_path=tmp_path / "none.json")
