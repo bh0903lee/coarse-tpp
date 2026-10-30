@@ -1,6 +1,7 @@
 """Re-scoring of trained intensity-based models (RMTPP, NHP, SAHP, AttNHP of EasyTPP) under floors and the interval
-score with a single Gauss-Legendre rule per gap (Section 5.2). The values of Supplementary Tables S2 and S3 use the
-graded rule of `rescore_intensity_models.py` in the trained-models archive. No training.
+score with a single Gauss-Legendre rule per gap (Section 5.2). The trained-models archive provides the original
+graded rules. The retrained models of Supplementary Tables S3-S5 (nine architectures, stratified S2P2 compensator,
+joint scores) are scored by coarse_tpp.rescore_retrained. No training.
 
     python -m coarse_tpp.rescore_intensity score --ckpt CKPT_DIR --out OUT_DIR [--datasets ...] [--nodes 32]
     python -m coarse_tpp.rescore_intensity report --ckpt CKPT_DIR --out OUT_DIR
@@ -26,7 +27,6 @@ import json
 import math
 import os
 import re
-import sys
 from collections import Counter
 from pathlib import Path
 
@@ -46,9 +46,8 @@ G_CHUNK = {"RMTPP": 256, "NHP": 128, "SAHP": 128, "AttNHP": 16}
 
 
 def _easy_tpp():
-    p = str(ROOT / "third_party" / "easy_tpp")
-    if p not in sys.path:
-        sys.path.insert(0, p)
+    from .easytpp import activate
+    activate("models")
 
 
 # ------------------------------------------------------------------ data

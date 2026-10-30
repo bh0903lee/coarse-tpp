@@ -37,6 +37,9 @@ Experiments (paper section in brackets):
                           --more), all treatments of coarsened_real plus triangular, GRU and Transformer [S4]
   triangular_recorded     the triangular-kernel likelihood on the nine data sets of rank_change and the seven
                           process logs; the other treatments are the rank_change / process_logs runs   [8, S4]
+  density_heads           Weibull-mixture and spline-flow heads (K = 8), GRU, five tied data sets, four
+                          treatments; the log-normal mixture counterparts are the rank_change run
+                          (Supplementary Table S8)                                                    [5.3, S3]
 """
 from __future__ import annotations
 
@@ -141,6 +144,13 @@ BOUNDS_ARMS = SAME_DENSITY_ARMS
 SIGMA_MIN, MU_MIN = 2.0, math.log(1e-4)
 BOUNDS = {"sigmin2": dict(sigma_min=SIGMA_MIN), "mumin1e-4": dict(mu_min=MU_MIN),
           "sigmin2_mumin1e-4": dict(sigma_min=SIGMA_MIN, mu_min=MU_MIN)}
+
+# further density heads (Supplementary Table S8): Weibull mixture and rational-quadratic spline flow
+# (coarse_tpp.models), on the five data sets of rank_change with at least 1% test ties, under the two floors 1e-10
+# and 1e-6, uniform gap jitter and the interval likelihood
+HEADS_DATASETS = ("conttime_q10", "conttime_q02", "email_eu", "retweet", "volcano")
+HEADS_ARMS = ("floor_1e-10", "floor_1e-6", "jitter_gap", "interval")
+DENSITY_HEADS = ("weib", "flow")
 
 # triangular kernel on coarsened and recorded data (Supplementary S4, "Smoothing objectives")
 TRI_IW_S = (1, 16, 64)
@@ -377,6 +387,10 @@ def cells_triangular_recorded(run, audit):
             + _real("triangular_recorded", run, audit, PROCESS_LOGS, ("triangular",), (TRF, GRU), marks=True))
 
 
+def cells_density_heads(run, audit):
+    return _real("density_heads", run, audit, HEADS_DATASETS, HEADS_ARMS, heads=DENSITY_HEADS)
+
+
 BUILDERS = {"synthetic": cells_synthetic, "rank_change": cells_rank_change, "intensity_heads": cells_intensity_heads,
             "process_logs": cells_process_logs, "delta_misspecification": cells_delta_misspecification,
             "iw_jitter": cells_iw_jitter, "iw_jitter_large": cells_iw_jitter_large,
@@ -385,7 +399,7 @@ BUILDERS = {"synthetic": cells_synthetic, "rank_change": cells_rank_change, "int
             "new_datasets": cells_new_datasets, "floor_convention": cells_floor_convention,
             "component_bounds": cells_component_bounds, "triangular_coarsened": cells_triangular_coarsened,
             "triangular_jitter": cells_triangular_jitter, "coarsened_more": cells_coarsened_more,
-            "triangular_recorded": cells_triangular_recorded}
+            "triangular_recorded": cells_triangular_recorded, "density_heads": cells_density_heads}
 NEEDS_AUDIT = set(BUILDERS) - {"synthetic", "iw_jitter_large", "floor_convention"}
 
 

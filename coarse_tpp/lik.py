@@ -1,6 +1,6 @@
 """Likelihoods of one inter-event gap under a predictive law, for exact and coarsely recorded gaps.
 
-Every predictive law (log-normal mixture, RMTPP intensity, THP intensity) exposes
+Every predictive law (log-normal mixture, RMTPP intensity, THP intensity, Weibull mixture, spline flow) exposes
   log_density(tau)      log p(tau), tau > 0
   log_interval(a, b)    log P(a <= tau < b), 0 <= a < b (a = 0 allowed)
   log_cdf(b)            log P(tau < b)
@@ -247,6 +247,121 @@ class THPIntensity(_Intensity):
         return self.Lambda_between(torch.zeros_like(s), s)
 
 
+# ------------------------------------------------------------------ further density heads
+# Two further flexible laws of the gap (density-heads experiment, Supplementary Table S8), both with closed-form
+# distribution functions so that the interval score is exact.
+LOG_K_LO, LOG_K_HI = math.log(0.05), math.log(20.0)     # Weibull shape bounds
+
+
+class WeibullMix:
+    """sum_k w_k Weibull(scale lambda_k, shape k_k) on raw gaps; parameters (..., K): log_w, log_lam, log_k.
+    x_k(t) = (t / lambda_k)^k_k; density k/lambda (t/lambda)^(k-1) exp(-x); P(tau < b) = 1 - exp(-x(b)).
+    A shape below 1 makes the density diverge at zero, as a narrow log-normal component does near the floor."""
+
+    def __init__(self, log_w, log_lam, log_k):
+        self.log_w, self.log_lam, self.log_k = log_w.double(), log_lam.double(), log_k.double()
+        self.k = self.log_k.exp()
+
+    def _log_x(self, t):
+        return (self.k * (torch.log(t).unsqueeze(-1) - self.log_lam)).clamp(max=700.0)
+
+    def log_density(self, tau):
+        tau = tau.double()
+        lx = self._log_x(tau)
+        comp = self.log_k - torch.log(tau).unsqueeze(-1) + lx - lx.exp()
+        return torch.logsumexp(self.log_w + comp, dim=-1)
+
+    def log_cdf(self, b):
+        return torch.logsumexp(self.log_w + _log1mexp_neg_exp(self._log_x(b.double())), dim=-1)
+
+    def log_interval(self, a, b):
+        a, b = a.double(), b.double()
+        pos = a > 0
+        a_safe = torch.where(pos, a, b * 0.5)
+        xa = self._log_x(a_safe).exp()
+        # x(b) - x(a) = x(b) (1 - exp(-k log(b / a))), with the log ratio formed from the interval width rather than
+        # from two rounded logarithms
+        ratio = self.k * torch.log1p((b - a_safe) / a_safe).unsqueeze(-1)
+        log_dx = self._log_x(b) + log1mexp(-ratio)
+        inner = torch.logsumexp(self.log_w - xa + _log1mexp_neg_exp(log_dx), dim=-1)
+        return torch.where(pos, inner, self.log_cdf(b))
+
+
+RQS_MIN_W, RQS_MIN_H, RQS_MIN_D = 1e-3, 1e-3, 1e-3
+
+
+def rqs_params(raw, K: int):
+    """raw (..., 3K - 1) -> knot widths and heights (..., K) as fractions of the domain and internal derivatives
+    (..., K - 1). Normalized in float64, the precision of the spline (float32 fractions can sum to a value other than
+    1 after promotion, which would make the spline jump at the identity tails)."""
+    raw = raw.double()
+    w = torch.softmax(raw[..., :K], -1)
+    h = torch.softmax(raw[..., K:2 * K], -1)
+    w = RQS_MIN_W + (1 - RQS_MIN_W * K) * w
+    h = RQS_MIN_H + (1 - RQS_MIN_H * K) * h
+    d = RQS_MIN_D + torch.nn.functional.softplus(raw[..., 2 * K:])
+    return w, h, d
+
+
+def rqs_forward(y, w, h, d, bound: float):
+    """Monotone rational-quadratic spline (Durkan et al. 2019) on [-bound, bound], identity outside, boundary
+    derivatives 1. y (...,); w, h (..., K) fractions; d (..., K - 1). Returns (T(y), log T'(y)), float64."""
+    y = y.double(); w, h, d = w.double(), h.double(), d.double()
+    shape = torch.broadcast_shapes(y.shape, w.shape[:-1])
+    y = y.expand(shape)
+    w, h, d = (t.expand(*shape, t.shape[-1]) for t in (w, h, d))
+    one = torch.ones_like(d[..., :1])
+    dd = torch.cat([one, d, one], -1)                                     # (..., K + 1)
+    xk = torch.cat([torch.zeros_like(w[..., :1]), w.cumsum(-1)], -1) * 2 * bound - bound
+    yk = torch.cat([torch.zeros_like(h[..., :1]), h.cumsum(-1)], -1) * 2 * bound - bound
+    inside = (y > -bound) & (y < bound)
+    yi = torch.where(inside, y, torch.zeros_like(y))
+    K = w.shape[-1]
+    idx = (torch.searchsorted(xk[..., 1:-1].contiguous(), yi.unsqueeze(-1).contiguous())).clamp(0, K - 1)
+    g = lambda t: t.gather(-1, idx).squeeze(-1)
+    g1 = lambda t: t.gather(-1, idx + 1).squeeze(-1)
+    x0, x1, y0, y1, d0, d1 = g(xk), g1(xk), g(yk), g1(yk), g(dd), g1(dd)
+    wb, hb = x1 - x0, y1 - y0
+    s = hb / wb
+    xi = ((yi - x0) / wb).clamp(0.0, 1.0)
+    t = xi * (1 - xi)
+    den = s + (d1 + d0 - 2 * s) * t
+    out = y0 + hb * (s * xi * xi + d0 * t) / den
+    logd = 2 * torch.log(s) + torch.log(d1 * xi * xi + 2 * s * t + d0 * (1 - xi) ** 2) - 2 * torch.log(den)
+    return torch.where(inside, out, y), torch.where(inside, logd, torch.zeros_like(y))
+
+
+class SplineFlow:
+    """Flow on the standardized log gap: y = (log tau - m) / s, z = T(y) ~ N(0, 1), T a monotone rational-quadratic
+    spline on [-bound, bound] (identity outside). log p(tau) = log phi(T(y)) + log T'(y) - log s - log tau;
+    P(tau < b) = Phi(T(y_b)). `bound` is chosen by the head so that the floors lie inside the spline domain."""
+
+    def __init__(self, w, h, d, m: float, s: float, bound: float):
+        self.w, self.h, self.d = w, h, d
+        self.m, self.s, self.bound = float(m), float(s), float(bound)
+
+    def _T(self, t):
+        y = (torch.log(t.double()) - self.m) / self.s
+        return rqs_forward(y, self.w, self.h, self.d, self.bound)
+
+    def log_density(self, tau):
+        tau = tau.double()
+        z, ld = self._T(tau)
+        return -0.5 * LOG_2PI - 0.5 * z * z + ld - math.log(self.s) - torch.log(tau)
+
+    def log_cdf(self, b):
+        z, _ = self._T(b.double())
+        return torch.special.log_ndtr(z)
+
+    def log_interval(self, a, b):
+        a, b = a.double(), b.double()
+        pos = a > 0
+        a_safe = torch.where(pos, a, b * 0.5)
+        za, _ = self._T(a_safe)
+        zb, _ = self._T(b)
+        return torch.where(pos, log_ndtr_diff(za, zb), self.log_cdf(b))
+
+
 # ------------------------------------------------------------------ scores
 SCORES = ("floor", "interval", "triangular", "point_mass")
 
@@ -311,6 +426,11 @@ def _broadcast_law(law, q):
         return RMTPP(g(law.c), g(law.w), law.scale)
     if isinstance(law, THPIntensity):
         return THPIntensity(g(law.c), g(law.beta), law.scale, law.n)
+    f = lambda t: t.unsqueeze(-2).expand(*t.shape[:-1], q, t.shape[-1])
+    if isinstance(law, WeibullMix):
+        return WeibullMix(f(law.log_w), f(law.log_lam), f(law.log_k))
+    if isinstance(law, SplineFlow):
+        return SplineFlow(f(law.w), f(law.h), f(law.d), law.m, law.s, law.bound)
     raise TypeError(type(law))
 
 

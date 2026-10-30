@@ -1012,6 +1012,113 @@ def report_component_bounds(run, bases=(), seeds=X.REAL_SEEDS):
     return L, summary
 
 
+# ------------------------------------------------------------------ further density heads (Supplementary Table S8)
+HEAD_FLOORS = tuple(X.FLOOR_ARMS)            # floor_1e-10, floor_1e-6, floor_1e-5 (test keys of every cell)
+HEAD_NAMES = {"weib": "Weibull mixture", "flow": "spline flow", "mix": "log-normal mixture"}
+MIN_SPREAD = 0.1                             # floor range counted as sensitive (nats per event)
+
+
+def top_arm(scores: dict) -> str:
+    """Treatment with the highest score; exact ties go to the first name in sorted order."""
+    return max(sorted(scores), key=lambda a: scores[a])
+
+
+def head_unit_metrics(arms: dict) -> dict:
+    """arms {treatment: {seed: result}} of one (data set, head) -> seed means of the test C and floor scores of the
+    C-selected checkpoints, the floor range of the model trained with floor 1e-6 (max - min over the three floors), the
+    top treatment by the floor 1e-6 score with its margin over the second, and the top treatment by C."""
+    m = {a: {k: float(np.mean([val(r, k) for r in seeds.values()])) for k in HEAD_FLOORS + ("C",)}
+         for a, seeds in arms.items()}
+    spread = max(m["floor_1e-6"][f] for f in HEAD_FLOORS) - min(m["floor_1e-6"][f] for f in HEAD_FLOORS)
+    f6 = {a: m[a]["floor_1e-6"] for a in arms}
+    t6, tc = top_arm(f6), top_arm({a: m[a]["C"] for a in arms})
+    ranked = sorted(f6.values(), reverse=True)
+    return dict(spread=spread, top_floor6=t6, margin=ranked[0] - ranked[1], top_C=tc, self=t6 == "floor_1e-6",
+                changed=t6 != tc, means=m)
+
+
+def head_status(run, heads=X.DENSITY_HEADS) -> dict:
+    """Per head: registered, finished-ok, wall-clock-stopped, failed and pending cells of the grid."""
+    out = {h: dict(n=0, ok=0, walltime=0, failed=0, pending=0) for h in heads}
+    for line in (Path(run) / "grid.jsonl").read_text().splitlines():
+        if not line.strip():
+            continue
+        cfg = json.loads(Path(json.loads(line)["config"]).read_text())
+        if cfg["head"] not in out:
+            continue
+        st, _, _ = R.load(cfg)
+        o = out[cfg["head"]]
+        o["n"] += 1
+        o[{"ok": "ok", "ok_walltime": "walltime"}.get(st, "failed" if st in R.TERMINAL_BAD else "pending")] += 1
+    for o in out.values():
+        o["fail_rate"] = (o["failed"] + o["walltime"]) / o["n"] if o["n"] else NAN
+    return out
+
+
+def report_density_heads(run, bases=(), audit=None):
+    """Floor sensitivity and the floor's self-preference with the Weibull-mixture and spline-flow heads, next to the
+    log-normal mixture of the rank_change run (pass it with --base) on the same data sets and treatments (GRU).
+    Per (data set, head), with the learning rate per treatment chosen by the dev-C mean over seeds:
+      floor range   max - min over the floors 1e-10, 1e-6, 1e-5 of the mean test floor score of the model trained with
+                    floor 1e-6 (the same model under three floors, as in Table 3)
+      self          the floor 1e-6 score ranks that model first among the four treatments (margin over the second)
+      changed       the top treatment by the floor 1e-6 score differs from the top treatment by C"""
+    audit = audit or {}
+    units, st = {}, {}
+    for r, heads in [(Path(run), X.DENSITY_HEADS)] + [(Path(b), ("mix",)) for b in bases]:
+        if not (r / "grid.jsonl").exists():
+            continue
+        cells, st[str(r)] = load_cells(r, with_status=True)
+        for (ds, enc, head, K, arm), seeds in select_lr(cells).items():
+            if enc == "gru" and head in heads and ds in X.HEADS_DATASETS and arm in X.HEADS_ARMS:
+                units.setdefault((ds, head), {})[arm] = seeds
+    status = head_status(run)
+    L = ["# Further density heads: floor sensitivity and the floor's self-preference", "",
+         "Exploratory (Supplementary Table S8). GRU; treatments " + ", ".join(X.HEADS_ARMS) + "; mix = the log-normal "
+         "mixture of the rank_change run restricted to the same four treatments. Learning rate per (data set, head, "
+         "treatment) by dev C; test scores of the C-selected checkpoints, means over seeds (nats per event). Floor range: "
+         "max - min over the floors 1e-10, 1e-6, 1e-5 of the model trained with floor 1e-6. Margin: top minus second "
+         "treatment by the floor 1e-6 score.", ""]
+    for r, s in st.items():
+        L += [f"{r}:"] + status_lines(s)
+    for h, o in status.items():
+        L.append(f"- {h}: {o['ok']}/{o['n']} ok, {o['walltime']} wall-clock, {o['failed']} failed, {o['pending']} pending "
+                 f"(failed share {o['fail_rate']:.1%})")
+    L += ["", "| data set | head | ties | floor range | top by floor 1e-6 | margin | self | top by C | changed |",
+          "|---|---|---:|---:|---|---:|---|---|---|"]
+    tie = lambda ds: audit.get(ds, {}).get("tie_share", NAN)
+    rows = []
+    for ds in sorted(X.HEADS_DATASETS, key=lambda d: (-tie(d) if tie(d) == tie(d) else 0.0, X.HEADS_DATASETS.index(d))):
+        for h in X.DENSITY_HEADS + ("mix",):
+            arms = units.get((ds, h), {})
+            r = dict(dataset=ds, head=h, tie_share=tie(ds), complete=set(arms) == set(X.HEADS_ARMS))
+            if r["complete"]:
+                r.update(head_unit_metrics(arms))
+                L.append(f"| {ds} | {h} | {tie(ds):.3f} | {r['spread']:.3f} | {r['top_floor6']} | {r['margin']:.3f} | "
+                         f"{'yes' if r['self'] else 'no'} | {r['top_C']}{' (same)' if not r['changed'] else ''} | "
+                         f"{'yes' if r['changed'] else 'no'} |")
+            else:
+                L.append(f"| {ds} | {h} | {tie(ds):.3f} | {PENDING} | | | | | |")
+            rows.append(r)
+    agg = {}
+    for h in X.DENSITY_HEADS + ("mix",):
+        rs = [r for r in rows if r["head"] == h and r["complete"]]
+        sp = [r["spread"] for r in rs]
+        agg[h] = dict(n_complete=len(rs), n_datasets=len(X.HEADS_DATASETS),
+                      spread_min=min(sp) if sp else None, spread_max=max(sp) if sp else None,
+                      n_self=sum(r["self"] for r in rs), n_changed=sum(r["changed"] for r in rs),
+                      n_sensitive_self=sum(r["spread"] >= MIN_SPREAD and r["self"] for r in rs))
+        if h in status:
+            agg[h]["cells"] = status[h]
+    L.append("")
+    for h, a in agg.items():
+        rng = (f"{a['spread_min']:.2f} to {a['spread_max']:.2f}" if a["n_complete"] else PENDING)
+        L.append(f"- {HEAD_NAMES[h]}: floor range {rng}; the floor 1e-6 ranks its own model first on {a['n_self']} and the top "
+                 f"treatment changes between the floor 1e-6 and C on {a['n_changed']} of {a['n_complete']} complete data sets "
+                 f"({a['n_sensitive_self']} with floor range >= {MIN_SPREAD} and self-preference).")
+    return L, dict(rows=rows, heads=agg)
+
+
 def run_report(experiment, run, audit_path=None, base=None):
     audit = audit_rows(audit_path)
     run = Path(run)
@@ -1045,6 +1152,8 @@ def run_report(experiment, run, audit_path=None, base=None):
         L, s = report_triangular(run, bases)
     elif experiment == "component_bounds":
         L, s = report_component_bounds(run, bases)
+    elif experiment == "density_heads":
+        L, s = report_density_heads(run, bases, audit)
     elif experiment == "floor_convention":
         raise SystemExit("floor_convention is reported by scripts/rescore_trained.py score/report (see README)")
     else:
@@ -1061,7 +1170,8 @@ def main(argv=None):
     ap.add_argument("--audit", default=None)
     ap.add_argument("--base", nargs="*", default=None,
                     help="further run directories: delta_misspecification (the synthetic run); triangular_* (the runs whose "
-                         "latent_scores.jsonl and result.json hold the other treatments); component_bounds (the rank_change run)")
+                         "latent_scores.jsonl and result.json hold the other treatments); component_bounds and density_heads (the "
+                         "rank_change run)")
     a = ap.parse_args(argv)
     L, _ = run_report(a.experiment, a.run, a.audit, a.base)
     print("\n".join(L))

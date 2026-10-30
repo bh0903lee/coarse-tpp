@@ -12,6 +12,11 @@ Heads:
                w = w_max tanh(g) with w_max = 30 scale / max train gap, so that the exponent stays <= 30 on the
                train range (an unbounded w overflows float32 gradients on heavy-tailed data)
   thp          lambda(s) = softplus(v.h + b + beta s / scale), beta a global scalar (Zuo et al. 2020)
+  weib         Weibull mixture, K components: log scale = m + s loc (raw log time, standardized as the mixture head),
+               shape in [0.05, 20] through a sigmoid of the log shape (initialized at shape 1)
+  flow         rational-quadratic spline flow (Durkan et al. 2019, K bins) on the standardized log gap with a standard
+               normal base; the spline domain reaches from FLOW_LO (below the smallest floor 1e-10) to 100 x the
+               largest training gap; identity outside; initialized near the identity
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ import torch.nn.functional as F
 from . import lik
 
 EPS32 = torch.finfo(torch.float32).eps
+FLOW_LO = 1e-11          # flow head: the spline domain reaches down to this gap (below the smallest floor 1e-10)
 
 
 def log_gap(iet):
@@ -168,6 +174,20 @@ class Model(nn.Module):
         if head == "mix":
             self.head = MixtureHead(d, K=K, param=mix_param, log_mean=stats.log_mean, log_std=stats.log_std,
                                     **(mix_kwargs or {}))
+        elif head == "weib":
+            self.head = nn.Linear(d, 3 * K)
+            self.K, self.m_log, self.s_log = K, float(stats.log_mean), float(stats.log_std)
+            with torch.no_grad():                 # shape 1 (exponential components) at the start
+                frac = (0.0 - lik.LOG_K_LO) / (lik.LOG_K_HI - lik.LOG_K_LO)
+                self.head.bias[K:2 * K].fill_(math.log(frac / (1 - frac)))
+        elif head == "flow":
+            self.head = nn.Linear(d, 3 * K - 1)
+            self.K, self.m_log, self.s_log = K, float(stats.log_mean), float(stats.log_std)
+            lo, hi = math.log(FLOW_LO), math.log(max(float(stats.max_train_iet), FLOW_LO)) + math.log(100.0)
+            self.flow_bound = max(abs(lo - self.m_log), abs(hi - self.m_log)) / self.s_log
+            with torch.no_grad():                 # near-identity spline at the start
+                self.head.weight.mul_(0.01); self.head.bias.zero_()
+                self.head.bias[2 * K:].fill_(math.log(math.expm1(1.0 - lik.RQS_MIN_D)))
         elif head in ("rmtpp", "thp"):
             self.head = nn.Linear(d, 1)
             self.g = nn.Parameter(torch.tensor(0.0))
@@ -195,6 +215,13 @@ class Model(nn.Module):
     def _laws(self, h):
         if self.kind == "mix":
             law = lik.LogNormMix(*self.head(h))
+        elif self.kind == "weib":
+            o, K = self.head(h), self.K
+            log_k = lik.LOG_K_LO + (lik.LOG_K_HI - lik.LOG_K_LO) * torch.sigmoid(o[..., K:2 * K])
+            law = lik.WeibullMix(torch.log_softmax(o[..., 2 * K:], -1), self.m_log + self.s_log * o[..., :K], log_k)
+        elif self.kind == "flow":
+            w, hh, dd = lik.rqs_params(self.head(h), self.K)
+            law = lik.SplineFlow(w, hh, dd, self.m_log, self.s_log, self.flow_bound)
         elif self.kind == "rmtpp":
             law = lik.RMTPP(self.head(h).squeeze(-1), (self.w_max * torch.tanh(self.g)).expand(h.shape[:-1]), self.scale)
         else:

@@ -5,7 +5,7 @@ Outputs in cfg["out_dir"]: result.json (written atomically after the test evalua
 A cell that already has a valid result.json is not trained again.
 
 Config keys (coarse_tpp.experiments writes them):
-  dataset, seed, encoder {type, marks, ...}, head (mix | rmtpp | thp), K, mix_param (mixture parameterization,
+  dataset, seed, encoder {type, marks, ...}, head (mix | rmtpp | thp | weib | flow), K, mix_param (mixture parameterization,
   default standard), sigma_min / mu_min (lower bounds of the standard mixture head, coarse_tpp.models), treatment,
   eps (floor), iw_samples (iw_jitter, iw_jitter_triangular), mix_lambda (interval_jitter_mix),
   delta (recording resolution of the data; 0 = exact), delta_model (resolution assumed by the treatment; = delta
