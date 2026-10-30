@@ -1,10 +1,10 @@
 """Training of the EasyTPP models of Section 5.2 and Supplementary Tables S3-S5 with the vendored, patched EasyTPP
 (third_party/easy_tpp_train, PATCHES.md). Three experiments, nine architectures, seeds 0-4:
 
-  time_only   Email-EU, Retweet subsample, CollegeMsg; time-only objective (Table S3, Fig. S5, the threshold-
+  time_only   Email-EU, Retweet subsample, CollegeMsg; time-only objective (Table S3, Fig. S3, the threshold-
               exceedance comparison of Section S4)
-  joint       Retweet subsample; the mark term in the objective (EASYTPP_MARK_LOSS=1; Table S4, Fig. S5)
-  further     Volcano, Sepsis, BPIC12; time-only objective, activities of the process logs as marks (Table S5, Fig. S5)
+  joint       Retweet subsample; the mark term in the objective (EASYTPP_MARK_LOSS=1; Table S4, Fig. S3)
+  further     Volcano, Sepsis, BPIC12; time-only objective, activities of the process logs as marks (Table S5, Fig. S3)
 
     python -m coarse_tpp.easytpp_train prepare --out runs/easytpp/data [--datasets ...]
     python -m coarse_tpp.easytpp_train train --experiment time_only --datasets email_eu --models NHP S2P2 \

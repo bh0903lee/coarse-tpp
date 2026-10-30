@@ -4,7 +4,7 @@
 
 writes RUN_DIR/report.md and RUN_DIR/summary.json.
 
-Common rules (Section 6 and S1): cells with status ok are used (ok_walltime and failed cells are excluded), and
+Common rules (Section 6 and S2): cells with status ok are used (ok_walltime and failed cells are excluded), and
 within a group (data set, encoder, head, K) only the seeds whose cells exist for every (treatment, learning rate)
 of the grid. Within a unit (group, treatment) the learning rate is chosen by the dev mean over seeds of the
 selection criterion (dev C unless stated), and the test values at that learning rate are used. Differences are
@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -195,6 +196,10 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
     tie = lambda ds: audit.get(ds, {}).get("tie_share", NAN)
     L = [f"# {title}", "", "Score: test C (recorded-cell log-likelihood per event) at the dev-C learning rate; seed-paired.", ""]
     L += status_lines(st)
+    missing = sorted({g[0] for g in groups if g[0] not in audit})
+    if missing:
+        msg = f"WARNING: no audit row for {', '.join(missing)}; their tie shares are unknown and they are left out of the tied-data tests."
+        print(msg, file=sys.stderr); L += [msg, ""]
     L += ["## Test C by treatment (mean over seeds)", "", "| data set | encoder | head | ties | " + " | ".join(arms) + " |",
           "|---|---|---|---:|" + "---:|" * len(arms)]
     for g in groups:
@@ -607,8 +612,8 @@ LATENT_SCHEMA = 2       # rows of coarse_tpp.latent_score that carry B_alt
 
 
 def latent_identity_current(row):
-    """Validate checkpoint-bound rows. Rows without an identity (deposited rows, or rows written before version 1.1.2)
-    remain readable but are not checked against the current checkpoint; re-score them to validate."""
+    """Validate checkpoint-bound rows. Rows without an identity remain readable but are not checked against the
+    current checkpoint; re-score them to validate."""
     if "identity" not in row:
         return True
     source = Path(row.get("source_config", ""))

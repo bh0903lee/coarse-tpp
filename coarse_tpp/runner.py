@@ -58,7 +58,7 @@ def main(argv=None):
     ap.add_argument("--per-gpu", type=int, default=1, help="concurrent cells per GPU")
     ap.add_argument("--workers", type=int, default=1, help="concurrent cells on CPU (without --gpus)")
     ap.add_argument("--only", default=None, help="run only cells whose id contains this string")
-    ap.add_argument("--retries", type=int, default=1)
+    ap.add_argument("--retries", type=int, default=1, help="re-run a failed cell up to this many times")
     a = ap.parse_args(argv)
     run = Path(a.run).resolve()
     todo = pending(run, a.only)

@@ -43,7 +43,7 @@ set `COARSE_TPP_DATA` to your data directory and use module entry points, for ex
 `python -m coarse_tpp.rescore_intensity --help`.
 
 To check the built distribution, run `pip wheel --no-deps --wheel-dir dist .`, then
-`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.1-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
+`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.2-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
 This check rebuilds and scores all four supported intensity models from the wheel in a separate process, without
 source-checkout imports, and verifies the vendored files against their recorded hashes.
 
@@ -116,7 +116,7 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Section 2, Table 1 and Appendix B (audit of 23 data sets; 22 are reconstructible from public files, the StackOverflow subsample is not) | `scripts/audit.py --out results/audit` | — |
 | Section 5.1, Table 3 and Supplementary Sections S2 and S3 (re-scoring trained mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_trained.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
 | Section 5.2 and Supplementary Table S2 (re-scoring the seed-42 intensity-based models; see "Reproduction scope") | `rescore_intensity_models.py` of the trained-models archive; `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` gives single-rule scores of RMTPP, NHP, SAHP and AttNHP runs | — |
-| Section 5.2, Supplementary Tables S3, S4 and S5 and Fig. S5 (EasyTPP models retrained with seeds 0–4: time-only objective on Email-EU, the Retweet subsample and CollegeMsg; the mark term in the objective on the Retweet subsample; time-only objective on Volcano, Sepsis and BPIC12) | `scripts/easytpp_train.py prepare --out runs/easytpp/data`; `scripts/easytpp_train.py train --experiment {time_only,joint,further} --data runs/easytpp/data --out runs/easytpp/EXP`; then `scripts/rescore_retrained.py score`, `repro` (joint, further) and `report --experiment EXP --ckpt runs/easytpp/EXP --data runs/easytpp/data --out results/EXP` | 135, 45, 135 runs |
+| Section 5.2, Supplementary Tables S3, S4 and S5 and Fig. S3 (EasyTPP models retrained with seeds 0–4: time-only objective on Email-EU, the Retweet subsample and CollegeMsg; the mark term in the objective on the Retweet subsample; time-only objective on Volcano, Sepsis and BPIC12) | `scripts/easytpp_train.py prepare --out runs/easytpp/data`; `scripts/easytpp_train.py train --experiment {time_only,joint,further} --data runs/easytpp/data --out runs/easytpp/EXP`; then `scripts/rescore_retrained.py score`, `repro` (joint, further) and `report --experiment EXP --ckpt runs/easytpp/EXP --data runs/easytpp/data --out results/EXP` | 135, 45, 135 runs |
 | Section S4 (threshold-exceedance comparison of the retrained intensity-based models; no training) | after `rescore_retrained.py score --experiment time_only`: `scripts/intensity_exceedance.py score`, then `report --scores results/time_only --ckpt CKPT --data runs/easytpp/data --out results/exceedance` | — |
 | Section 5.3, Table 4 and Supplementary Table S6; Section 6.2, Supplementary Table S1; S2 and S3 (mixture head) | `rank_change` | 1,440 |
 | Sections 5.3, 6.2 and S3 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
@@ -163,11 +163,9 @@ These figures are for means over all events of a split. Means over the tied even
 can differ more (up to about 2e-3 nats in a CPU re-scoring of IntensityFree models trained on a GPU).
 
 Cached scores (`rescore.jsonl`, `latent_scores.jsonl`, predictive, remaining-time and intensity score files) record
-the configuration and checkpoint they were computed from (since version 1.1.2) and are reused or reported only while
-these still match. Files written by earlier versions carry no such record: re-run the scoring command to validate
-them; until then the reports show them as stale or pending, except latent-time rows, which stay readable without
-this check. An interrupted scoring call resumes from its `.tmp` file. The deposited trained-models archive is
-unaffected.
+the configuration and checkpoint they were computed from and are reused or reported only while these still match;
+files without this record are shown as stale or pending until re-scored (latent-time rows stay readable). An
+interrupted scoring call resumes from its `.tmp` file.
 
 ## Reproduction scope
 
@@ -268,7 +266,7 @@ trained models, their configurations and scores, and the StackOverflow subsample
 | Weibull-mixture and spline-flow heads | heads `weib`, `flow`; experiment `density_heads` |
 | retrained EasyTPP models (time-only objective; mark term; further data sets) | `easytpp_train.py`, experiments `time_only`, `joint`, `further`; scoring and reports `rescore_retrained.py` |
 | threshold-exceedance comparison of the retrained intensity-based models | `intensity_exceedance.py` |
-| threshold-exceedance forecasts, P(next activity not recorded within a horizon h) (illustrative deadline monitoring; no alarm policy evaluated), and remaining time of a case | `alarms.py`, `scripts/sla_alarms.py` (names kept; rules `F`: dev floor 10⁻⁶, `C`: dev interval score, `F_own`) |
+| threshold-exceedance forecasts, P(next activity not recorded within a horizon h) (illustrative deadline monitoring; no alarm policy evaluated), and remaining time of a case | `alarms.py`, `scripts/sla_alarms.py` (rules `F`: dev floor 10⁻⁶, `C`: dev interval score, `F_own`) |
 
 | Data set (paper) | Folder | Data set (paper) | Folder |
 |---|---|---|---|

@@ -33,7 +33,7 @@ from .models import build
 
 TOL = 1e-4
 KEYS = ("C", "B", "B_alt")
-SCHEMA = 2              # rows with B_alt; rows of version 1.0 (B and C only) are re-scored
+SCHEMA = 2              # rows without B_alt are re-scored
 
 
 def _pad(arrs, idx, L, device):
@@ -94,9 +94,9 @@ def current(r: dict) -> bool:
 
 
 def fresh_rows(dst: Path) -> dict:
-    """{cell_id: row} of the current-schema rows of an existing output file. Rows of an older schema (version 1.0
-    wrote B and C only) are not reusable: the file is backed up once to <name>.v1 and rewritten with the current rows
-    only, with a notice, so that the missing cells are scored again instead of being skipped."""
+    """{cell_id: row} of the current-schema rows of an existing output file. Rows without B_alt are not
+    reusable: the file is backed up once to <name>.v1 and rewritten with the current rows only, so that those cells are
+    scored again."""
     if not dst.exists():
         return {}
     rows = [json.loads(x) for x in dst.read_text().splitlines() if x.strip()]
