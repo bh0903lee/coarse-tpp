@@ -133,7 +133,7 @@ def _tri_rows(run, datasets, arms, seed=2, skip=lambda ds, arm: False, b_alt_mis
                     b_alt = b + (0.05 if arm == "point_mass" else -0.3)
                     test, dev = dict(C=-1.0, B=b, B_alt=b_alt), dict(B=b, B_alt=b_alt)
                     if b_alt_missing(ds, arm, s):
-                        test, dev = dict(C=-1.0, B=b), dict(B=b)                       # a row of the 1.0 schema
+                        test, dev = dict(C=-1.0, B=b), dict(B=b)                       # a row without B_alt
                     rows.append(dict(cell_id=cfg["cell_id"], arm=arm, dataset=ds, seed=s, mismatch=False, wall_sec=2.0 if arm == "triangular" else 1.0,
                                      config=dict(dataset=ds, encoder=cfg["encoder"], head="mix", K=8, lr_tag=lr, treatment=cfg["treatment"], delta=1.0),
                                      dev_crit=b, dev=dev, test=test))
@@ -165,7 +165,7 @@ def test_report_triangular_on_fabricated_latent_scores(tmp_path):
 
 def test_report_triangular_keeps_planned_units_and_old_rows_out(tmp_path):
     """A planned combination without any triangular result stays in the denominator as pending (the verdict cannot
-    become true from a truncated population), and rows of the 1.0 schema (no B_alt) are left out and reported."""
+    become true from a truncated population), and rows without B_alt are left out and reported."""
     run = tmp_path / "tri"
     _tri_rows(run, ("coarsened_taxi_r1", "coarsened_conttime_r1"), ("triangular",) + A.TRI_BASE,
               skip=lambda ds, arm: ds == "coarsened_conttime_r1" and arm == "triangular")

@@ -2,7 +2,6 @@
 probability prediction made from the model? (Section 5.3, "Consequence for probability prediction"; Supplementary S4,
 Table S12.) Exploratory, no training. The horizons are derived from the data and illustrate deadline (SLA-style)
 monitoring; they are not observed service-level agreements, and no alarm policy or operational utility is evaluated.
-The file and command names (alarms, sla_alarms) are kept for compatibility.
 
     python -m coarse_tpp.alarms score RUN_DIR [--base TRI_RUN] [--tasks sla,rt] [--datasets bpi_sepsis ...]
                                    [--selected] [--only CELL ...] [--limit N] [--force] [--retry-quarantined] [--cpu]

@@ -363,6 +363,9 @@ def run(cfg: dict) -> dict:
 
 
 def main():
+    if len(sys.argv) != 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__)
+        sys.exit(0 if len(sys.argv) == 2 else 2)
     cfg = json.loads(Path(sys.argv[1]).read_text())
     try:
         run(cfg)

@@ -94,7 +94,7 @@ LOGS = {
 
 
 # ----------------------------------------------------------------------------------------- download
-def _get(url: str, timeout=600) -> bytes:
+def _get(url: str, timeout=60) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
@@ -135,6 +135,7 @@ def download(short: str, log: dict) -> dict:
     attempts, data = [], None
     for u in urls:                                   # 1. live official URLs
         try:
+            print(f"{log['fname']}: fetching {u}", flush=True)
             cand = _get(u)
             why = _looks_valid(cand, log["fname"])
             if why is None:
@@ -436,15 +437,21 @@ def cmd_convert(shorts):
 
 def main(argv=None):
     global RAW, OUT
-    argv = sys.argv[1:] if argv is None else argv
-    cmd = argv[0] if argv else "all"
-    rest = [x for x in argv[1:] if not x.startswith("--")]
-    for x in argv[1:]:
-        if x.startswith("--data="):
-            OUT = Path(x.split("=", 1)[1]); RAW = OUT / "raw_bpi"
-        if x.startswith("--raw="):
-            RAW = Path(x.split("=", 1)[1])
-    shorts = rest or list(LOGS)
+    import argparse
+    ap = argparse.ArgumentParser(description="Download and convert the business process logs.")
+    ap.add_argument("cmd", nargs="?", default="all", choices=["download", "convert", "all"])
+    ap.add_argument("logs", nargs="*", help=f"short names (default: all of {', '.join(LOGS)})")
+    ap.add_argument("--data", help="data directory (raw files in DATA/raw_bpi)")
+    ap.add_argument("--raw", help="directory of the raw files")
+    a = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    if a.data:
+        OUT = Path(a.data); RAW = OUT / "raw_bpi"
+    if a.raw:
+        RAW = Path(a.raw)
+    bad = [x for x in a.logs if x not in LOGS]
+    if bad:
+        ap.error(f"unknown log(s): {', '.join(bad)}")
+    cmd, shorts = a.cmd, a.logs or list(LOGS)
     failed = []
     if cmd in ("download", "all"):
         failed = cmd_download(shorts)

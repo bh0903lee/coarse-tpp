@@ -195,7 +195,7 @@ def test_latent_score_of_coarsened_data(datadir, tmp_path):
     latent_score.main([str(run2)])
     rows = [json.loads(x) for x in (run2 / "latent_scores.jsonl").read_text().splitlines()]
     assert len(rows) == 1 and not rows[0]["mismatch"] and abs(rows[0]["test"]["B"] - res["test"]["B"]) < 1e-6
-    # a row of the 1.0 schema (no B_alt) is moved aside and its cell scored again
+    # a row without B_alt is moved aside and its cell scored again
     old = dict(rows[0]); old.pop("schema"); old["test"] = dict(C=old["test"]["C"], B=old["test"]["B"]); old["dev"] = dict(B=old["dev"]["B"])
     (run2 / "latent_scores.jsonl").write_text(json.dumps(old) + "\n")
     latent_score.main([str(run2)])

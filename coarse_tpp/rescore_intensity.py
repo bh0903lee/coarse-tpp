@@ -248,8 +248,8 @@ def current_counts(ds):
 
 def select(cells, ckpt: Path):
     """{(ds, model): chosen cell} by the dev floor_1e-6 score among runs with finite scores whose training log (if
-    any) matches the event counts of the data files, with verified current configuration and weights.
-    Unidentified legacy package caches must be re-scored; deposited archive scripts remain separate."""
+    any) matches the event counts of the data files, with verified current configuration and weights. Cached scores
+    without an identity are re-scored."""
     out, cur = {}, {}
     for c in cells:
         cand = ckpt / c["dataset"] / c["model"] / c["candidate"]

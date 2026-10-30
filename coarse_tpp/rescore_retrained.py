@@ -1,5 +1,5 @@
 """Scoring, reproduction check and reports of the retrained EasyTPP models (Section 5.2; Supplementary Tables S3-S5 and
-the S2P2 - NHP differences of Fig. S5). Models: coarse_tpp.easytpp_train (experiments time_only, joint, further).
+the S2P2 - NHP differences of Fig. S3). Models: coarse_tpp.easytpp_train (experiments time_only, joint, further).
 Scores: coarse_tpp.intensity_eval (floors, interval score; joint scores of time and mark for `joint`).
 
     python -m coarse_tpp.rescore_retrained score  --experiment time_only --ckpt RUNS --data PREPARED --out OUT [--audit A]
@@ -304,8 +304,8 @@ def from_archive_key(k: str) -> str:
 def import_archive(experiment, archive, out):
     """Score files from an archive's scores.csv (the scores the archive deposited, computed with the rule of the row),
     bound to the archive's checkpoints, configurations and training records by their SHA-256, and the archive's
-    reproduction references (repro/) copied to <out>/repro; `report` then works as after `score` and `repro`. Rows of a
-    superseded S2P2 rule (lattice) are skipped: re-score those runs with `score`."""
+    reproduction references (repro/) copied to <out>/repro; `report` then works as after `score` and `repro`. Rows scored
+    with the lattice rule (S2P2 in the five-seed archive) are skipped; score those runs with `score`."""
     import csv
     import shutil
     experiment_of(experiment)
@@ -318,7 +318,7 @@ def import_archive(experiment, archive, out):
     for r in rows:
         ds, model, seed = r["dataset"], r["model"], int(r["seed"])
         if "lattice" in (r.get("rule") or ""):
-            print(f"{ds} {model} s{seed}: superseded rule {r['rule']}; skipped (re-score with score)", file=sys.stderr)
+            print(f"{ds} {model} s{seed}: lattice rule; skipped (re-score with score)", file=sys.stderr)
             continue
         loc = E.locate_run(archive, ds, model, seed)
         res = loc["result"] or {}
