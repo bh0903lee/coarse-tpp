@@ -389,3 +389,51 @@ def test_time_only_training_smoke_and_exceedance(smoke):
     assert not X.cache_ok(rec, "email_eu", "NHP", 0, IE.Rule(), [k + 1 for k in kh], 1.0, s["runs"])
     rec = X.score_run("email_eu", "IntensityFree", 0, 1.0, kh, IE.Rule(), s["runs"], pkl, s["out"], out, torch.device("cpu"))
     assert rec["methods"] == ["closed"] and "tie_check" in rec
+
+
+def test_archive_layout_import_and_reproduction_references(smoke, tmp_path):
+    """A run deposited in the archive layout (seed<k>/{saved_model.pt, config.yaml, result.json} + scores.csv + repro/)
+    is found by locate_run, imported from scores.csv and gated by the deposited reproduction reference."""
+    import csv
+    import shutil
+    s = smoke
+    T.train_one("joint", "retweet_sub", "RMTPP", 0, s["prep"], s["runs"], epochs=1)
+    R.score("joint", s["runs"], s["prep"], s["out"], models=["RMTPP"], seeds=(0,), rule=IE.Rule(per_panel=8), audit=s["audit"])
+    R.repro("joint", s["runs"], s["prep"], s["out"], models=["RMTPP"], seeds=(0,), repeats=2)
+    c = json.loads((s["out"] / "scores" / "retweet_sub__RMTPP__s0.json").read_text())
+    loc = E.locate_run(s["runs"], "retweet_sub", "RMTPP", 0)
+    arch = tmp_path / "archive"; sd = arch / "retweet_sub" / "RMTPP" / "seed0"; sd.mkdir(parents=True)
+    shutil.copyfile(loc["checkpoint"], sd / "saved_model.pt"); shutil.copyfile(loc["config"], sd / "config.yaml")
+    shutil.copyfile(loc["result_path"], sd / "result.json")
+    shutil.copytree(s["out"] / "repro", arch / "repro", ignore=shutil.ignore_patterns("work"))
+    row = dict(dataset="retweet_sub", model="RMTPP", seed=0, status="ok", failure="", rule="graded8", per_panel=8,
+               strata="", strat_seed="", cell_panels="", delta=1.0, tie_threshold=c["tie_threshold"])
+    for sp in ("dev", "test"):
+        for k, v in c[sp].items():
+            key = (k.replace("joint_interval2", "joint_gap2").replace("joint_interval", "joint_gap").replace("floor_1e-10", "eps10")
+                   .replace("floor_1e-6", "eps6").replace("floor_1e-5", "eps5").replace("interval", "gap"))
+            row[f"{sp}_{key}"] = v
+    with open(arch / "scores.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(row)); w.writeheader(); w.writerow(row)
+    a = E.locate_run(arch, "retweet_sub", "RMTPP", 0)
+    assert a["checkpoint"] == sd / "saved_model.pt" and a["result"]["mark_loss"] is True
+    out = tmp_path / "imported"
+    assert R.import_archive("joint", arch, out) == 1
+    cells = R.load_cells("joint", out)
+    assert cells[0]["test"]["joint_interval"] == pytest.approx(c["test"]["joint_interval"], abs=0)
+    assert cells[0]["repro"].get("key") == "joint_floor_1e-6"
+    assert cells[0]["quarantined"] and any("not a full run" in p for p in cells[0]["problems"])
+    assert all("not a full run" in p or "reproduction" in p for p in cells[0]["problems"])
+    # report from score files without local references reads the archive's repro/ directory
+    shutil.rmtree(out / "repro")
+    assert any("missing" in p for p in R.load_cells("joint", out)[0]["problems"])
+    assert "repro" in R.load_cells("joint", out, [arch / "repro"])[0] and not any(
+        "missing" in p for p in R.load_cells("joint", out, [arch / "repro"])[0]["problems"])
+    assert E.sha256(sd / "saved_model.pt") == cells[0]["inputs"]["checkpoint_sha256"]
+    res = json.loads((sd / "result.json").read_text())
+    res["audit_note"] = "changed training record"
+    (sd / "result.json").write_text(json.dumps(res))
+    assert R.import_archive("joint", arch, out) == 1
+    changed = R.load_cells("joint", out)[0]
+    assert not changed["repro"]["ok"]
+    assert any("not bound" in p for p in changed["problems"])

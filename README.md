@@ -43,7 +43,7 @@ set `COARSE_TPP_DATA` to your data directory and use module entry points, for ex
 `python -m coarse_tpp.rescore_intensity --help`.
 
 To check the built distribution, run `pip wheel --no-deps --wheel-dir dist .`, then
-`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.0-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
+`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.1-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
 This check rebuilds and scores all four supported intensity models from the wheel in a separate process, without
 source-checkout imports, and verifies the vendored files against their recorded hashes.
 
@@ -172,7 +172,10 @@ unaffected.
 The commands above implement every analysis of the paper and its Supplementary Material. The reports contain the
 values given in the paper; tables and figures are typeset from them. Supplementary Table S7 lists the data sets in the
 order and with the tie shares of Table 1 (the audit); its report gives the tie shares of the test split. Trained models
-that are distributed are listed below; all other results are reproduced by training with the commands above.
+that are distributed are listed below; all other results are reproduced by training with the commands above. The
+trained models, their configurations and scores, and the StackOverflow subsample are in the archive
+`coarse-tpp-trained-models.zip` attached to the release `trained-models-v1` of this repository
+(https://github.com/bh0903lee/coarse-tpp/releases); its README describes every directory.
 
 - **Section 5.1, Table 3 (trained mixture-density models).** The re-scoring code (`coarse_tpp/rescore.py`,
   `scripts/rescore_trained.py`) is the procedure used in the paper. The 1,020 trained checkpoints it was applied to are
@@ -197,16 +200,24 @@ that are distributed are listed below; all other results are reproduced by train
   `intensity_models_five_seeds/` directly, and `scripts/intensity_exceedance.py` uses the same checkpoints. The S2P2
   estimate depends on the device's random generator: on CUDA it reproduces the published values, on CPU it differs by
   Monte Carlo error (about 0.003 nats per event).
-- **Supplementary Tables S4 and S5 (intensity-based models retrained with the mark term on the Retweet subsample, and
-  on Volcano, Sepsis and BPIC12).** These checkpoints are not distributed. `scripts/easytpp_train.py` retrains them
-  with the vendored, patched EasyTPP in `third_party/easy_tpp_train/` (configurations identical to those of the paper
-  apart from paths; `PATCHES.md` lists the changes); retrained models can differ slightly from the published ones
-  because GPU training is not bit-for-bit deterministic. `scripts/rescore_retrained.py repro` checks each run against
-  EasyTPP's own Monte Carlo evaluation before it enters the comparison.
   `scripts/rescore_intensity.py` of this repository re-scores RMTPP, NHP,
   SAHP and AttNHP runs (one EasyTPP run directory with `saved_model.pt` and `config.yaml` per data set, model and run)
   with a single Gauss–Legendre rule per gap (`--nodes`, 32 by default); its values can differ from the paper's by up to
   about 0.7 nats per event (retrained RMTPP on Email-EU) for intensities that rise steeply after an event.
+- **Supplementary Tables S4 and S5 (intensity-based models retrained with the mark term on the Retweet subsample, and
+  on Volcano, Sepsis and BPIC12).** The checkpoints, their scores and the reproduction references are in the same
+  archive (`intensity_models_mark_term/`, `intensity_models_further_data/`). `scripts/rescore_retrained.py import
+  --experiment {joint,further} --ckpt <archive directory> --out OUT` turns the deposited scores into the input of
+  `report`; `score` recomputes them from the checkpoints, and `report --repro-dir <archive directory>/repro` uses the
+  deposited reproduction references. `scripts/easytpp_train.py` retrains the models with the vendored, patched EasyTPP
+  in `third_party/easy_tpp_train/` (configurations identical to those of the paper apart from paths; `PATCHES.md`
+  lists the changes); retrained models can differ slightly from the deposited ones because GPU training is not
+  bit-for-bit deterministic, and `scripts/rescore_retrained.py repro` checks each new run against EasyTPP's own Monte
+  Carlo evaluation before it enters the comparison.
+- **Section 5.3, Table 4 (treatment rankings) and the analyses that re-score these models (Fig. S4, Supplementary
+  Tables S7, S9 and S14).** The 1,440 trained models of `rank_change` are in the archive (`rank_change/`) in the run
+  layout of this package; paths in it are relative, so run the commands of the table above from inside a copy of that
+  directory (see the archive's README).
 
 ## Names in the paper and in the code
 
