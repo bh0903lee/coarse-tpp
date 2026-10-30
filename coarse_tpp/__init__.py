@@ -2,4 +2,4 @@
 floor scores, training treatments for ties, synthetic processes with known latent times, experiment grids and
 their summaries."""
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"

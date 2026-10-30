@@ -4,7 +4,8 @@ Scores: coarse_tpp.intensity_eval (floors, interval score; joint scores of time 
 
     python -m coarse_tpp.rescore_retrained score  --experiment time_only --ckpt RUNS --data PREPARED --out OUT [--audit A]
     python -m coarse_tpp.rescore_retrained repro  --experiment joint --ckpt RUNS --data PREPARED --out OUT [--repeats 50]
-    python -m coarse_tpp.rescore_retrained report --experiment joint --out OUT
+    python -m coarse_tpp.rescore_retrained report --experiment joint --out OUT [--repro-dir ARCHIVE/repro]
+    python -m coarse_tpp.rescore_retrained import --experiment joint --ckpt ARCHIVE --out OUT   (deposited scores)
 
 RUNS is the run root of coarse_tpp.easytpp_train (<data set>/<model>/s<seed>/ with result.json and EasyTPP's run
 directory; the run roots of the trained-models archive have the same layout), PREPARED the directory of the EasyTPP
@@ -30,6 +31,8 @@ score otherwise, at eps = 1e-5 for IntensityFree (its training clamps gaps at 1e
 draws come from the device's generator, so the reference differs slightly between devices (within its standard error).
 The time-only five-seed table (Table S3) uses every run with a checkpoint, as in the paper; its report gives the check
 against the single estimate logged at training time for information.
+Reproduction references are bound to the experiment, objective key, repeat count and checkpoint, configuration,
+training record and data hashes. References without that provenance must be regenerated with `repro`.
 
 Divergence: a test floor 1e-6 score below -100 nats per event or non-finite. Tables give mean +- SD over the valid
 runs that did not diverge (over the diverged ones, marked *, when all diverged).
@@ -42,6 +45,8 @@ import io
 import json
 import math
 import os
+import re
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -105,6 +110,15 @@ def objective_key(model_id: str, ds: str) -> str:
 
 def file_hash(p):
     return E.sha256(p) if p and Path(p).is_file() else None
+
+
+def repro_identity(experiment, ds, model, seed, inputs, repeats):
+    key = objective_key(model, ds)
+    return dict(version=1, experiment=experiment, dataset=ds, model=model, seed=seed,
+                ours_key=f"joint_{key}" if EXPERIMENTS[experiment]["mark_loss"] else key,
+                repeats=repeats,
+                inputs={name + "_sha256": inputs.get(name + "_sha256")
+                        for name in ("checkpoint", "config", "data", "result")})
 
 
 def run_inputs(ckpt, ds, model, seed, data_dir):
@@ -235,9 +249,10 @@ def repro(experiment, ckpt, data_dir, out, datasets=None, models=None, seeds=E.S
                 if res is None or ident["checkpoint"] is None:
                     continue
                 dst = out / "repro" / f"{ds}__{model_id}__s{seed}.json"
+                identity = repro_identity(experiment, ds, model_id, seed, ident, repeats)
                 if dst.exists():
                     old = json.loads(dst.read_text())
-                    if old.get("checkpoint_sha256") == ident["checkpoint_sha256"] and old.get("repeats") == repeats:
+                    if old.get("identity") == identity:
                         continue
                 work = out / "repro" / "work" / f"{ds}__{model_id}__s{seed}"
                 work.mkdir(parents=True, exist_ok=True)
@@ -253,6 +268,7 @@ def repro(experiment, ckpt, data_dir, out, datasets=None, models=None, seeds=E.S
                 k = objective_key(model_id, ds)
                 logged_key = "loglike" if ex["mark_loss"] else "time_ll"
                 rec = dict(experiment=experiment, dataset=ds, model=model_id, seed=seed,
+                           identity=identity,
                            checkpoint_sha256=ident["checkpoint_sha256"], repeats=repeats,
                            G=model.loss_integral_num_sample_per_step, ours_key=f"joint_{k}" if ex["mark_loss"] else k,
                            logged_key=logged_key,
@@ -276,10 +292,66 @@ def repro(experiment, ckpt, data_dir, out, datasets=None, models=None, seeds=E.S
                       flush=True)
 
 
+# ------------------------------------------------------------------ archived scores
+def from_archive_key(k: str) -> str:
+    """Score names of the trained-models archive (eps10, eps6, eps5, gap, joint_gap, ...) -> names of this module."""
+    for a, b in (("joint_gap2", "joint_interval2"), ("joint_gap", "joint_interval"), ("eps10", "floor_1e-10"),
+                 ("eps6", "floor_1e-6"), ("eps5", "floor_1e-5")):
+        k = k.replace(a, b)
+    return re.sub(r"(^|_)gap(?=$|_)", r"\1interval", k)
+
+
+def import_archive(experiment, archive, out):
+    """Score files from an archive's scores.csv (the scores the archive deposited, computed with the rule of the row),
+    bound to the archive's checkpoints, configurations and training records by their SHA-256, and the archive's
+    reproduction references (repro/) copied to <out>/repro; `report` then works as after `score` and `repro`. Rows of a
+    superseded S2P2 rule (lattice) are skipped: re-score those runs with `score`."""
+    import csv
+    import shutil
+    experiment_of(experiment)
+    archive, out = Path(archive), Path(out)
+    (out / "scores").mkdir(parents=True, exist_ok=True)
+    num = lambda v: None if v in (None, "") else float(v)
+    n = 0
+    with open(archive / "scores.csv", newline="") as f:
+        rows = list(csv.DictReader(f))
+    for r in rows:
+        ds, model, seed = r["dataset"], r["model"], int(r["seed"])
+        if "lattice" in (r.get("rule") or ""):
+            print(f"{ds} {model} s{seed}: superseded rule {r['rule']}; skipped (re-score with score)", file=sys.stderr)
+            continue
+        loc = E.locate_run(archive, ds, model, seed)
+        res = loc["result"] or {}
+        ck, cfg, rp = loc["checkpoint"], loc["config"], loc["result_path"]
+        ident = dict(checkpoint=str(ck.resolve()) if ck else None, checkpoint_sha256=file_hash(ck),
+                     config=str(cfg.resolve()) if cfg else None, config_sha256=file_hash(cfg),
+                     result=str(rp.resolve()) if rp else None, result_sha256=file_hash(rp),
+                     data=None, data_sha256=res.get("data_sha256"))
+        rule = dict(per_panel=int(num(r.get("per_panel")) or 32))
+        if r.get("strata"):
+            rule.update(strata=int(num(r["strata"])), strat_seed=int(num(r["strat_seed"])), cell_panels=int(num(r["cell_panels"])))
+        c = dict(cache_key=dict(version=VERSION, source="archive"), inputs=ident, experiment=experiment, dataset=ds,
+                 model=model, seed=seed, delta=num(r.get("delta")), tie_threshold=num(r.get("tie_threshold")), rule=rule,
+                 status=r.get("status"), error=r.get("failure") or None, source=str(archive / "scores.csv"),
+                 problems=run_problems(experiment, res, ident, None) if res else ["no training record"])
+        for sp in ("dev", "test"):
+            vals = {from_archive_key(k[len(sp) + 1:]): num(v) for k, v in r.items() if k.startswith(sp + "_")}
+            if vals.get("n") is not None:
+                vals["n"], vals["n_tie"] = int(vals["n"]), int(vals["n_tie"])
+                c[sp] = vals
+        (out / "scores" / f"{ds}__{model}__s{seed}.json").write_text(json.dumps(c, indent=1))
+        n += 1
+    if (archive / "repro").is_dir():
+        (out / "repro").mkdir(parents=True, exist_ok=True)
+        for p in (archive / "repro").glob("*.json"):
+            shutil.copyfile(p, out / "repro" / p.name)
+    return n
+
+
 # ------------------------------------------------------------------ report
-def load_cells(experiment, out):
+def load_cells(experiment, out, repro_dirs=()):
     """Score files of `out` with their problems: those recorded at scoring, stale inputs, and for joint / further the
-    reproduction check."""
+    reproduction check (reference files in <out>/repro, else in `repro_dirs`, e.g. an archive's repro/)."""
     out = Path(out)
     cells = []
     for p in sorted((out / "scores").glob("*.json")):
@@ -294,14 +366,16 @@ def load_cells(experiment, out):
             if inp.get(name) and inp.get(f"{name}_sha256") and file_hash(inp[name]) != inp[f"{name}_sha256"]:
                 problems.append(f"stale input: {name} changed since scoring")
         if experiment != "time_only" and c.get("test"):
-            problems = mc_gate(c, out, problems)
+            problems = mc_gate(c, out, problems, repro_dirs)
         c["problems"], c["quarantined"] = problems, bool(problems)
         cells.append(c)
     return cells
 
 
-def mc_gate(c, out, problems):
-    f = Path(out) / "repro" / f"{c['dataset']}__{c['model']}__s{c['seed']}.json"
+def mc_gate(c, out, problems, repro_dirs=()):
+    name = f"{c['dataset']}__{c['model']}__s{c['seed']}.json"
+    f = next((d / name for d in [Path(out) / "repro"] + [Path(x) for x in repro_dirs] if (d / name).exists()),
+             Path(out) / "repro" / name)
     if not f.exists():
         c["repro"] = dict(ok=False)
         return problems + ["reproduction check missing (run repro)"]
@@ -309,6 +383,12 @@ def mc_gate(c, out, problems):
     if d.get("checkpoint_sha256") != (c.get("inputs") or {}).get("checkpoint_sha256"):
         c["repro"] = dict(ok=False)
         return problems + ["reproduction check is not bound to this checkpoint (run repro)"]
+    identity = repro_identity(c["experiment"], c["dataset"], c["model"], c["seed"],
+                              c.get("inputs") or {}, d.get("repeats"))
+    if (not all(identity["inputs"].values()) or d.get("identity") != identity
+            or d.get("experiment") != c["experiment"] or d.get("ours_key") != identity["ours_key"]):
+        c["repro"] = dict(ok=False)
+        return problems + ["reproduction check is not bound to these inputs and objective (run repro)"]
     rep, ok = dict(key=d["ours_key"], repeats=d["repeats"]), True
     for sp in ("dev", "test"):
         ours = c[sp].get(d["ours_key"])
@@ -560,10 +640,10 @@ def report_further(cells, out):
     return L, summ
 
 
-def report(experiment, out, seed42=None):
+def report(experiment, out, seed42=None, repro_dirs=()):
     experiment_of(experiment)
     out = Path(out)
-    cells = load_cells(experiment, out)
+    cells = load_cells(experiment, out, repro_dirs)
     if experiment == "time_only":
         L, summ = report_time_only(cells, out, seed42)
     else:
@@ -577,9 +657,11 @@ def report(experiment, out, seed42=None):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=("score", "repro", "report"))
+    ap.add_argument("cmd", choices=("score", "repro", "report", "import"))
     ap.add_argument("--experiment", required=True, choices=tuple(EXPERIMENTS))
-    ap.add_argument("--ckpt", help="run root")
+    ap.add_argument("--ckpt", help="run root (import: the archive directory)")
+    ap.add_argument("--repro-dir", nargs="*", default=[], help="report: further directories with reproduction reference "
+                    "files (e.g. the repro/ directory of an archive)")
     ap.add_argument("--data", help="directory of the prepared EasyTPP pickles")
     ap.add_argument("--out", required=True)
     ap.add_argument("--datasets", nargs="*")
@@ -597,13 +679,19 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd in ("score", "repro") and not (a.ckpt and a.data):
         ap.error("--ckpt and --data are required")
+    if a.cmd == "import":
+        if not a.ckpt:
+            ap.error("--ckpt (the archive directory) is required")
+        n = import_archive(a.experiment, a.ckpt, a.out)
+        print(f"imported {n} runs into {a.out}/scores (reproduction references into {a.out}/repro)")
+        return
     if a.cmd == "score":
         rule = IE.Rule(per_panel=a.per_panel, strata=a.strata, strat_seed=a.strat_seed, cell_panels=a.cell_panels)
         score(a.experiment, a.ckpt, a.data, a.out, a.datasets, a.models, tuple(a.seeds), rule, a.audit, a.force)
     elif a.cmd == "repro":
         repro(a.experiment, a.ckpt, a.data, a.out, a.datasets, a.models, tuple(a.seeds), a.repeats)
     else:
-        print("\n".join(report(a.experiment, a.out, a.seed42)))
+        print("\n".join(report(a.experiment, a.out, a.seed42, a.repro_dir)))
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ interval score, compared by the Brier loss of P(next event not recorded within h
 
 Selection per data set (Email-EU, Retweet subsample, CollegeMsg): the architecture with the highest mean dev floor 1e-6
 score and the one with the highest mean dev interval score, means over the five seeds (diverged seeds included); an
-architecture without a finite dev value on every seed is not rankable. The dev scores are those of
+architecture without a finite dev value on every expected seed is not rankable; quarantined runs are excluded. The dev scores are those of
 `coarse_tpp.rescore_retrained score --experiment time_only` (OUT_TIME_ONLY/scores).
 
 Forecasts on the test split, for every seed of the chosen architectures: p_h = P(recorded gap > h) = P(s >= h + delta)
@@ -29,7 +29,9 @@ and the per-seed differences. A flag (not a gate) compares the mean log(1 - p_0)
 test interval score of the ties.
 
 Cache: OUT/<data set>__<model>__s<seed>.json and .npz are reused only for the same version, method, stratified
-settings, horizons, delta and checkpoint and configuration SHA-256; the report rejects caches that no longer match.
+settings, horizons, delta and checkpoint, configuration and data SHA-256. The per-sequence arrays are bound to the
+JSON record by SHA-256. The report checks the current selection scores and rejects caches that no longer match;
+complete means both selected models have all five seeds and each was evaluated on the full test split.
 """
 from __future__ import annotations
 
@@ -48,9 +50,9 @@ from . import easytpp as E
 from . import intensity_eval as IE
 from .analysis import audit_rows
 from .rescore_intensity import MAX_TOKENS, make_batch
-from .rescore_retrained import load_cells, F6, IV
+from .rescore_retrained import load_cells, valid, F6, IV
 
-VERSION = 1
+VERSION = 2
 DATASETS = ("email_eu", "retweet_sub", "collegemsg")
 STRATA = 65536
 REPRO_TOL = 1e-4
@@ -74,13 +76,13 @@ def select(cells, ds):
     """{'floor': (model, mean), 'interval': (model, mean)} by the dev means over all five seeds, and all means."""
     by = {}
     for c in cells:
-        if c["dataset"] == ds:
+        if c["dataset"] == ds and not c.get("quarantined"):
             by.setdefault(c["model"], {})[c["seed"]] = c
     means = {}
     for m, seeds in by.items():
         for key, k in (("floor", F6), ("interval", IV)):
             v = [(s.get("dev") or {}).get(k) for s in seeds.values()]
-            ok = len(v) == len(E.SEEDS) and all(x is not None and math.isfinite(x) for x in v)
+            ok = set(seeds) == set(E.SEEDS) and all(x is not None and math.isfinite(x) for x in v)
             means.setdefault(key, {})[m] = float(np.mean(v)) if ok else None
     out = {}
     for key in ("floor", "interval"):
@@ -187,9 +189,10 @@ def probs(model, mid, seqs, pad, kh, delta, methods, rule, ds, device):
 
 
 # ------------------------------------------------------------------ runs
-def identity(ds, mid, rule, kh, delta, loc):
+def identity(ds, mid, rule, kh, delta, loc, pkl):
     out = dict(version=VERSION, primary=primary_method(mid), kh=list(kh), delta=delta,
-               checkpoint_sha256=E.sha256(loc["checkpoint"]), config_sha256=E.sha256(loc["config"]))
+               checkpoint_sha256=E.sha256(loc["checkpoint"]), config_sha256=E.sha256(loc["config"]),
+               data_sha256=E.sha256(pkl))
     if out["primary"] == "strat":
         out["strat"] = dict(strata=rule.strata, strat_seed=rule.strat_seed)
     return out
@@ -212,7 +215,8 @@ def score_run(ds, mid, seed, delta, kh, rule, ckpt, pkl, scores_out, out_dir, de
     y, resid = A.outcomes(tau, kh, delta)
     p = np.clip(P[prim], 0.0, 1.0)
     m, brier, logs, cost = A.sla_metrics(p, y)
-    rec = dict(identity=identity(ds, mid, rule, kh, delta, loc), dataset=ds, model=mid, seed=seed, primary=prim,
+    rec = dict(identity=identity(ds, mid, rule, kh, delta, loc, pkl), data=str(Path(pkl).resolve()),
+               dataset=ds, model=mid, seed=seed, primary=prim,
                methods=methods, complete=complete, n_events=int(len(tau)), grid_residual=resid, **m)
     if "graded32" in P and "graded128" in P:
         d = np.abs(P["graded32"] - P["graded128"])
@@ -228,19 +232,34 @@ def score_run(ds, mid, seed, delta, kh, rule, ckpt, pkl, scores_out, out_dir, de
         rec["tie_check"] = dict(mine=mine, stored=stored, absdiff=abs(mine - stored) if stored is not None else None,
                                 flagged=bool(stored is None or abs(mine - stored) > REPRO_TOL))
     n_seq = len(seqs)
-    np.savez_compressed(out_dir / f"{ds}__{mid}__s{seed}.npz", n=A.seq_sums(sq, n_seq, np.ones(len(sq))),
+    arrays = out_dir / f"{ds}__{mid}__s{seed}.npz"
+    np.savez_compressed(arrays, n=A.seq_sums(sq, n_seq, np.ones(len(sq))),
                         brier=A.seq_sums(sq, n_seq, brier), logs=A.seq_sums(sq, n_seq, logs), cost=A.seq_sums(sq, n_seq, cost))
+    rec["arrays"] = dict(path=str(arrays.resolve()), sha256=E.sha256(arrays))
     rec["wall_sec"] = round(time.time() - t0, 1)
     return rec
 
 
-def cache_ok(j, ds, mid, seed, rule, kh, delta, ckpt):
+def cache_ok(j, ds, mid, seed, rule, kh, delta, ckpt, pkl=None):
     loc = E.locate_run(ckpt, ds, mid, seed)
-    return loc["checkpoint"] is not None and j.get("identity") == identity(ds, mid, rule, kh, delta, loc)
+    data = pkl if pkl is not None else j.get("data")
+    arrays = j.get("arrays") or {}
+    if (loc["checkpoint"] is None or loc["config"] is None or not data or not Path(data).is_file()
+            or not arrays.get("path") or not Path(arrays["path"]).is_file()):
+        return False
+    return (j.get("identity") == identity(ds, mid, rule, kh, delta, loc, data)
+            and arrays.get("sha256") == E.sha256(arrays["path"]))
+
+
+def selection_record(cells, ds):
+    cells = [c for c in cells if c["dataset"] == ds and valid(c)]
+    sel, means = select(cells, ds)
+    return dict(selection=sel, dev_means=means,
+                source_identity=E.content_sha256(sorted(cells, key=lambda c: (c["model"], c["seed"]))))
 
 
 def _setup(scores_out, ds, audit, pkl):
-    cells = [c for c in load_cells("time_only", scores_out) if not any("stale" in p for p in c["problems"])]
+    cells = [c for c in load_cells("time_only", scores_out) if valid(c)]
     delta = (audit_rows(audit).get(ds) or {}).get("delta")
     hg = h_grid(pkl, ds, delta)
     return cells, delta, hg, [hg[k][0] for k in A.H_KEYS]
@@ -253,9 +272,10 @@ def cmd_score(a):
     for ds in a.datasets or DATASETS:
         pkl = Path(a.data) / f"{E.EASYTPP_ID[ds]}.pkl"
         cells, delta, hg, kh = _setup(a.scores, ds, a.audit, pkl)
-        sel, means = select(cells, ds)
+        selection = selection_record(cells, ds)
+        sel = selection["selection"]
         (out / f"{ds}__selection.json").write_text(json.dumps(dict(
-            selection=sel, dev_means=means, delta=delta, h_grid={k: dict(kh=v[0], h=v[1], q_raw=v[2]) for k, v in hg.items()}), indent=1))
+            **selection, delta=delta, h_grid={k: dict(kh=v[0], h=v[1], q_raw=v[2]) for k, v in hg.items()}), indent=1))
         models = a.models or sorted({m for m, _ in sel.values() if m})
         if "FullyNN" in models and not a.allow_fullynn:
             print("FullyNN excluded (exp(-Phi) is not a normalized survival; --allow-fullynn scores it)", flush=True)
@@ -266,7 +286,7 @@ def cmd_score(a):
                 p = out / f"{ds}__{mid}__s{seed}.json"
                 if p.exists() and not a.force:
                     j = json.loads(p.read_text())
-                    if (j.get("complete") or a.max_seqs is not None) and cache_ok(j, ds, mid, seed, rule, kh, delta, a.ckpt):
+                    if (j.get("complete") or a.max_seqs is not None) and cache_ok(j, ds, mid, seed, rule, kh, delta, a.ckpt, pkl):
                         continue
                 rec = score_run(ds, mid, seed, delta, kh, rule, a.ckpt, pkl, a.scores, out, device, a.max_seqs, not a.no_check)
                 p.write_text(json.dumps(rec, indent=1, default=str))
@@ -291,6 +311,11 @@ def cmd_report(a):
         if not sp.exists():
             continue
         S = json.loads(sp.read_text())
+        current = selection_record(load_cells("time_only", a.scores), ds)
+        if (not S.get("source_identity") or S["source_identity"] != current["source_identity"]
+                or E.content_sha256(S["selection"]) != E.content_sha256(current["selection"])
+                or E.content_sha256(S["dev_means"]) != E.content_sha256(current["dev_means"])):
+            raise ValueError(f"{ds}: selection scores changed or lack provenance; re-run score")
         kh = [S["h_grid"][k]["kh"] for k in A.H_KEYS]
         (mf, vf), (mi, vi) = S["selection"]["floor"], S["selection"]["interval"]
 
@@ -302,6 +327,8 @@ def cmd_report(a):
                     continue
                 if not cache_ok(j, ds, mid, j["seed"], rule, kh, S["delta"], a.ckpt):
                     raise ValueError(f"{p.name}: computed with other settings or inputs than requested; re-run score")
+                if j["arrays"]["sha256"] != E.sha256(p.with_suffix(".npz")):
+                    raise ValueError(f"{p.name}: score arrays changed; re-run score")
                 js[j["seed"]] = j; zs[j["seed"]] = dict(np.load(p.with_suffix(".npz")))
             return js, zs
         if "FullyNN" in (mf, mi):
@@ -323,7 +350,8 @@ def cmd_report(a):
             dtxt = f"{pt:+.5f} [{lo:+.5f}, {hi:+.5f}]"
         conv = max([j["conv_32_128"]["max_abs"] for j in list(jf.values()) + list(ji.values()) if "conv_32_128" in j] or [float("nan")])
         flags = sorted({f"{j['model']} s{j['seed']}" for j in list(jf.values()) + list(ji.values()) if (j.get("tie_check") or {}).get("flagged")})
-        compl = all(j["complete"] for j in list(jf.values()) + list(ji.values()))
+        compl = (set(jf) == set(ji) == set(E.SEEDS)
+                 and all(j["complete"] for j in list(jf.values()) + list(ji.values())))
         L.append(f"| {E.NAMES[ds]} | {mf} ({vf:+.4f}) | {mi} ({vi:+.4f}) | {len(seeds)} | {np.mean(bF):.5f} | {np.mean(bI):.5f} | "
                  f"{dtxt} | {', '.join(f'{b - f:+.4f}' for f, b in zip(bF, bI))} | {conv:.2e} | {', '.join(flags) or 'none'} | {compl} |")
         per_h = {h: dict(floor=float(np.mean([jf[s]["brier"][h] for s in seeds])),
