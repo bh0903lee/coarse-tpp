@@ -157,8 +157,10 @@ published tables from the original result files; matching those tables requires 
 rules and score checks.
 
 Results are deterministic for a given device and library version (seeded data order, initialization and jitter
-draws). Evaluating a trained model on another device changes the scores in the 6th to 8th decimal (float32 encoders;
-floor scores of very narrow mixture components can move by up to about 1e-4).
+draws). Evaluating a trained model on another device or library version changes the scores in the 6th to 8th decimal
+(float32 encoders); floor scores of very narrow mixture components, as in IntensityFree, can move by up to about 1e-4.
+These figures are for means over all events of a split. Means over the tied events alone average far fewer events and
+can differ more (up to about 2e-3 nats in a CPU re-scoring of IntensityFree models trained on a GPU).
 
 Cached scores (`rescore.jsonl`, `latent_scores.jsonl`, predictive, remaining-time and intensity score files) record
 the configuration and checkpoint they were computed from (since version 1.1.2) and are reused or reported only while
