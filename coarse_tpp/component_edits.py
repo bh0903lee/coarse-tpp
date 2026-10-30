@@ -1,5 +1,5 @@
 """Component edits: decomposition of the floor's self-preference margin into the location and the scale of the
-mixture component at the tie (Supplementary S4, "Component location and scale", Table S5). No training.
+mixture component at the tie (Supplementary S4, "Component location and scale", Table S9). No training.
 
     python -m coarse_tpp.component_edits score RUN_DIR [--shard i/n] [--limit N] [--cpu] [--force] [--retry-quarantined]
     python -m coarse_tpp.component_edits report RUN_DIR
