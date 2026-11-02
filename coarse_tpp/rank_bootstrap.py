@@ -1,6 +1,6 @@
 """Bootstrap of the rankings of Table 4: how often the top treatment by the floor score (floor 1e-6) and by the
 interval score C differ under resampling of test sequences and training seeds (Supplementary S4, "Resampling",
-Table S7). Exploratory; no training and no re-scoring.
+Table S6). Exploratory; no training and no re-scoring.
 
     python -m coarse_tpp.rank_bootstrap run RUN_DIR [--B 2000] [--out DIR]
     python -m coarse_tpp.rank_bootstrap check RUN_DIR       validity checks only, no outcome computed

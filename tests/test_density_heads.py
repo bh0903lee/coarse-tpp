@@ -1,4 +1,4 @@
-"""Weibull-mixture and spline-flow heads (Supplementary Table S8): laws, heads, grid, training and report."""
+"""Weibull-mixture and spline-flow heads (Supplementary Table S7): laws, heads, grid, training and report."""
 import json
 import math
 

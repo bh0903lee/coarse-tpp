@@ -43,7 +43,7 @@ set `COARSE_TPP_DATA` to your data directory and use module entry points, for ex
 `python -m coarse_tpp.rescore_intensity --help`.
 
 To check the built distribution, run `pip wheel --no-deps --wheel-dir dist .`, then
-`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.2-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
+`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.3-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
 This check rebuilds and scores all four supported intensity models from the wheel in a separate process, without
 source-checkout imports, and verifies the vendored files against their recorded hashes.
 
@@ -115,31 +115,31 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 |---|---|---:|
 | Section 2, Table 1 and Appendix B (audit of 23 data sets; 22 are reconstructible from public files, the StackOverflow subsample is not) | `scripts/audit.py --out results/audit` | — |
 | Section 5.1, Table 3 and Supplementary Sections S2 and S3 (re-scoring trained mixture models; see "Reproduction scope") | `floor_convention`, then `scripts/rescore_trained.py score/report runs/floor_convention --compare floor_1e-6_sigma_sigmoid floor_1e-6_standard` | 840 |
-| Section 5.2 and Supplementary Table S2 (re-scoring the seed-42 intensity-based models; see "Reproduction scope") | `rescore_intensity_models.py` of the trained-models archive; `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` gives single-rule scores of RMTPP, NHP, SAHP and AttNHP runs | — |
-| Section 5.2, Supplementary Tables S3, S4 and S5 and Fig. S3 (EasyTPP models retrained with seeds 0–4: time-only objective on Email-EU, the Retweet subsample and CollegeMsg; the mark term in the objective on the Retweet subsample; time-only objective on Volcano, Sepsis and BPIC12) | `scripts/easytpp_train.py prepare --out runs/easytpp/data`; `scripts/easytpp_train.py train --experiment {time_only,joint,further} --data runs/easytpp/data --out runs/easytpp/EXP`; then `scripts/rescore_retrained.py score`, `repro` (joint, further) and `report --experiment EXP --ckpt runs/easytpp/EXP --data runs/easytpp/data --out results/EXP` | 135, 45, 135 runs |
+| Section 5.2 and Supplementary Table S1 (re-scoring the seed-42 intensity-based models; see "Reproduction scope") | `rescore_intensity_models.py` of the trained-models archive; `scripts/rescore_intensity.py score/report --ckpt CKPT --out results/intensity` gives single-rule scores of RMTPP, NHP, SAHP and AttNHP runs | — |
+| Section 5.2, Fig. 2 and Supplementary Tables S2, S3 and S4 (EasyTPP models retrained with seeds 0–4: time-only objective on Email-EU, the Retweet subsample and CollegeMsg; the mark term in the objective on the Retweet subsample; time-only objective on Volcano, Sepsis and BPIC12) | `scripts/easytpp_train.py prepare --out runs/easytpp/data`; `scripts/easytpp_train.py train --experiment {time_only,joint,further} --data runs/easytpp/data --out runs/easytpp/EXP`; then `scripts/rescore_retrained.py score`, `repro` (joint, further) and `report --experiment EXP --ckpt runs/easytpp/EXP --data runs/easytpp/data --out results/EXP` | 135, 45, 135 runs |
 | Section S4 (threshold-exceedance comparison of the retrained intensity-based models; no training) | after `rescore_retrained.py score --experiment time_only`: `scripts/intensity_exceedance.py score`, then `report --scores results/time_only --ckpt CKPT --data runs/easytpp/data --out results/exceedance` | — |
-| Section 5.3, Table 4 and Supplementary Table S6; Section 6.2, Supplementary Table S1; S2 and S3 (mixture head) | `rank_change` | 1,440 |
+| Section 5.3, Table 4 and Supplementary Table S5; Section 6.2, Table 6 and Supplementary Sections S2 and S3 (mixture head) | `rank_change` | 1,440 |
 | Sections 5.3, 6.2 and S3 (new splits, further data sets) | `resplit`, `new_datasets` | 400, 150 |
 | Section 6.1, S2 and S3 (synthetic data) | `synthetic` | 5,040 |
 | Section 6.1 and S4 (coarsened real data) | `coarsened_real`, then `scripts/score_latent.py runs/coarsened_real` before the report | 1,440 |
-| Section 6.2, Supplementary Table S1; S2 and S3 (RMTPP, THP) | `intensity_heads` | 600 |
-| Sections 5.3 and 6.2, Supplementary Table S1; S2 and S3 (process logs) | `process_logs` | 840 |
+| Section 6.2, Table 6 and Supplementary Sections S2 and S3 (RMTPP, THP) | `intensity_heads` | 600 |
+| Sections 5.3 and 6.2, Table 6 and Supplementary Sections S2 and S3 (process logs) | `process_logs` | 840 |
 | Section 6.2 and S4 (multi-sample jitter) | `iw_jitter` | 1,380 |
 | Section 8 and S4 (self-correcting process at Δ = 1) | `iw_jitter_large`; `scripts/inbin_diagnostic.py true_law` and `models --run runs/synthetic --cells '*synth_SC_r*_d1p0*'` | 240 |
 | Section 8 and S4 (smoothing objectives) | `inbin_smoothing`, `inbin_smoothing_seeds` | 1,150, 800 |
 | Section 8 and S4 (misspecified resolution) | `delta_misspecification` (report with `--base runs/synthetic`) | 554 |
 | Section 8 and S4 (marks) | `marks` | 420 |
-| Section S4, Supplementary Table S13 and Fig. S6 (joint rankings of time and mark; no training) | after `marks`: `scripts/joint_rankings.py runs/marks` (writes `runs/marks/joint_rankings/`) | — |
-| Section 5.3, S3 and Supplementary Table S8 (other density heads: Weibull mixture, spline flow) | `density_heads` (report with `--base runs/rank_change`) | 400 |
-| Section S4 and Fig. S4 (floor score on a grid of 37 floors; no training) | after `rank_change`: `scripts/floor_grid.py score runs/rank_change` (`--cpu`, `--shard i/n`), then `scripts/floor_grid.py report runs/rank_change` (writes `runs/rank_change/floor_grid/`) | — |
-| Section S4 and Supplementary Table S7 (bootstrap of the rankings; no training) | after `rank_change`: `scripts/rank_bootstrap.py run runs/rank_change` (writes `runs/rank_change/rank_bootstrap/`) | — |
-| Section 5.3, S4 and Supplementary Table S14 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
-| Section 5.3 and Supplementary Table S9 (location and scale of the mixture component at the tie: edits of the saved checkpoints; no training) | after `rank_change`: `scripts/component_edits.py score runs/rank_change`, then `scripts/component_edits.py report runs/rank_change` (writes `runs/rank_change/component_edits/`) | — |
-| Section 5.3 and Supplementary Tables S10 and S11 (lower bounds on the mixture components) | `component_bounds` (report with `--base runs/rank_change`, the unbounded arm) | 450 |
-| Section 5.3 and Supplementary Table S12 (threshold-exceedance forecasts and remaining time on the process logs; no training) | after `process_logs`: `scripts/sla_alarms.py score runs/process_logs --tasks sla,rt`, then `scripts/sla_alarms.py report runs/process_logs` (writes `runs/process_logs/alarms/`; `--base runs/triangular_recorded` adds the triangular candidate) | — |
+| Section S4, Supplementary Table S12 and Fig. S5 (joint rankings of time and mark; no training) | after `marks`: `scripts/joint_rankings.py runs/marks` (writes `runs/marks/joint_rankings/`) | — |
+| Section 5.3, S3 and Supplementary Table S7 (other density heads: Weibull mixture, spline flow) | `density_heads` (report with `--base runs/rank_change`) | 400 |
+| Section S4 and Fig. S3 (floor score on a grid of 37 floors; no training) | after `rank_change`: `scripts/floor_grid.py score runs/rank_change` (`--cpu`, `--shard i/n`), then `scripts/floor_grid.py report runs/rank_change` (writes `runs/rank_change/floor_grid/`) | — |
+| Section S4 and Supplementary Table S6 (bootstrap of the rankings; no training) | after `rank_change`: `scripts/rank_bootstrap.py run runs/rank_change` (writes `runs/rank_change/rank_bootstrap/`) | — |
+| Section 5.3, S4 and Supplementary Table S13 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
+| Section 5.3 and Supplementary Table S8 (location and scale of the mixture component at the tie: edits of the saved checkpoints; no training) | after `rank_change`: `scripts/component_edits.py score runs/rank_change`, then `scripts/component_edits.py report runs/rank_change` (writes `runs/rank_change/component_edits/`) | — |
+| Section 5.3 and Supplementary Tables S9 and S10 (lower bounds on the mixture components) | `component_bounds` (report with `--base runs/rank_change`, the unbounded arm) | 450 |
+| Section 5.3 and Supplementary Table S11 (threshold-exceedance forecasts and remaining time on the process logs; no training) | after `process_logs`: `scripts/sla_alarms.py score runs/process_logs --tasks sla,rt`, then `scripts/sla_alarms.py report runs/process_logs` (writes `runs/process_logs/alarms/`; `--base runs/triangular_recorded` adds the triangular candidate) | — |
 | Section 8 and S4 (triangular kernel on coarsened and recorded data, multi-sample triangular jitter; the recorded-data table of the report takes its combinations from the `triangular_recorded` grid only) | `triangular_coarsened`, `coarsened_more`, `triangular_jitter`, each followed by `scripts/score_latent.py RUN` (also on `runs/coarsened_real`, `runs/synthetic`, `runs/inbin_smoothing`); `triangular_recorded`; one report: `scripts/report.py triangular_coarsened runs/triangular_coarsened --base runs/coarsened_real runs/coarsened_more runs/triangular_jitter runs/synthetic runs/inbin_smoothing runs/triangular_recorded runs/rank_change runs/process_logs` | 240, 840, 900, 320 |
 
-Supplementary Table S14 is derived from the rows of `predictive/summary.json`: for `twcrps` and `mae_median` (the other
+Supplementary Table S13 is derived from the rows of `predictive/summary.json`: for `twcrps` and `mae_median` (the other
 measures, `rmse`, `rmse_median` and `crps`, are in the same file), the table reports the seed-paired difference `d_m` (interval-score
 choice minus floor-score choice) in percent of the floor-score choice's value, `100 × d_m / m_floor`; the same scaling
 applies to the upper bound `d_m_up95`.
@@ -150,7 +150,7 @@ intervals are one-sided 95% t intervals. *Preserved*: lower bound of [interval �
 *violated*: upper bound < −0.01; *advantage*: Holm-adjusted p < 0.05 and a mean gain ≥ 0.01 nats over the strongest
 non-interval treatment chosen by dev C. These rules are implemented in `coarse_tpp/analysis.py`.
 
-The component and triangular-kernel analyses (Tables S9–S12, the triangular comparison of Section S4) are implemented in this
+The component and triangular-kernel analyses (Tables S8–S11, the triangular comparison of Section S4) are implemented in this
 release; their full training and checkpoint-scoring pipelines have not been rerun end to end with this public package.
 Unit tests and small integration tests validate the implementation, and the aggregation functions reproduce the
 published tables from the original result files; matching those tables requires the specified data, grids, selection
@@ -170,7 +170,7 @@ interrupted scoring call resumes from its `.tmp` file.
 ## Reproduction scope
 
 The commands above implement every analysis of the paper and its Supplementary Material. The reports contain the
-values given in the paper; tables and figures are typeset from them. Supplementary Table S7 lists the data sets in the
+values given in the paper; tables and figures are typeset from them. Supplementary Table S6 lists the data sets in the
 order and with the tie shares of Table 1 (the audit); its report gives the tie shares of the test split. Trained models
 that are distributed are listed below; all other results are reproduced by training with the commands above. The
 trained models, their configurations and scores, and the StackOverflow subsample are in the archive
@@ -185,10 +185,10 @@ trained models, their configurations and scores, and the StackOverflow subsample
   floor 10⁻⁶); it approximates the trained models of the paper but is not identical to them (their number and the
   training code differ), so its scores are expected to be close to, not equal to, Table 3. The StackOverflow subsample
   is not reconstructible from public files and is included in the archive (see `data/README.md`).
-- **Section 5.2, Supplementary Tables S2 and S3 (intensity-based models).** The selected EasyTPP checkpoints of
-  Table S2 (RMTPP, NHP, SAHP and AttNHP, seed 42, settings of `configs/easytpp_intensity.yaml`: hidden size 64, 100
+- **Section 5.2, Supplementary Tables S1 and S2 (intensity-based models).** The selected EasyTPP checkpoints of
+  Table S1 (RMTPP, NHP, SAHP and AttNHP, seed 42, settings of `configs/easytpp_intensity.yaml`: hidden size 64, 100
   epochs, learning rate 10⁻³, batch size 32, 10 Monte Carlo samples per interval for the compensator) and the models of
-  Table S3, retrained with seeds 0–4 on Email-EU, the Retweet subsample and CollegeMsg (RMTPP, NHP, SAHP, AttNHP, THP,
+  Table S2, retrained with seeds 0–4 on Email-EU, the Retweet subsample and CollegeMsg (RMTPP, NHP, SAHP, AttNHP, THP,
   S2P2, FullyNN, IntensityFree; same settings), are in that archive. All were trained with a time-only objective (the
   log-likelihood of the event times without the mark term; not a configuration option). The archive also holds the
   patched EasyTPP model code needed to rebuild them and `rescore_intensity_models.py`, which reproduces the archive's
@@ -204,7 +204,7 @@ trained models, their configurations and scores, and the StackOverflow subsample
   SAHP and AttNHP runs (one EasyTPP run directory with `saved_model.pt` and `config.yaml` per data set, model and run)
   with a single Gauss–Legendre rule per gap (`--nodes`, 32 by default); its values can differ from the paper's by up to
   about 0.7 nats per event (retrained RMTPP on Email-EU) for intensities that rise steeply after an event.
-- **Supplementary Tables S4 and S5 (intensity-based models retrained with the mark term on the Retweet subsample, and
+- **Supplementary Tables S3 and S4 (intensity-based models retrained with the mark term on the Retweet subsample, and
   on Volcano, Sepsis and BPIC12).** The checkpoints, their scores and the reproduction references are in the same
   archive (`intensity_models_mark_term/`, `intensity_models_further_data/`). `scripts/rescore_retrained.py import
   --experiment {joint,further} --ckpt <archive directory> --out OUT` turns the deposited scores into the input of
@@ -214,8 +214,8 @@ trained models, their configurations and scores, and the StackOverflow subsample
   lists the changes); retrained models can differ slightly from the deposited ones because GPU training is not
   bit-for-bit deterministic, and `scripts/rescore_retrained.py repro` checks each new run against EasyTPP's own Monte
   Carlo evaluation before it enters the comparison.
-- **Section 5.3, Table 4 (treatment rankings) and the analyses that re-score these models (Fig. S4, Supplementary
-  Tables S7, S9 and S14).** The 1,440 trained models of `rank_change` are in the archive (`rank_change/`) in the run
+- **Section 5.3, Table 4 (treatment rankings) and the analyses that re-score these models (Fig. S3, Supplementary
+  Tables S6, S8 and S13).** The 1,440 trained models of `rank_change` are in the archive (`rank_change/`) in the run
   layout of this package; paths in it are relative, so run the commands of the table above from inside a copy of that
   directory (see the archive's README).
 
@@ -296,11 +296,11 @@ coarse_tpp/           the package
   runner.py           runs a grid sequentially or on several GPUs
   analysis.py         summary statistics and reports
   rescore.py, rescore_intensity.py, latent_score.py, diagnostics.py, predictive.py
-  component_edits.py  edits of the mixture component at the tie on saved checkpoints (Table S9)
-  alarms.py           threshold-exceedance forecasts and remaining time on the process logs (Table S12)
-  floor_grid.py, rank_bootstrap.py, joint_rankings.py     floor grid (Fig. S4), ranking bootstrap (Table S7),
-                      joint rankings of time and mark (Table S13)
-  easytpp.py, easytpp_train.py    data preparation and training of the EasyTPP models (Tables S3-S5)
+  component_edits.py  edits of the mixture component at the tie on saved checkpoints (Table S8)
+  alarms.py           threshold-exceedance forecasts and remaining time on the process logs (Table S11)
+  floor_grid.py, rank_bootstrap.py, joint_rankings.py     floor grid (Fig. S3), ranking bootstrap (Table S6),
+                      joint rankings of time and mark (Table S12)
+  easytpp.py, easytpp_train.py    data preparation and training of the EasyTPP models (Tables S2-S4)
   intensity_eval.py, rescore_retrained.py, intensity_exceedance.py   scoring rules, scores, reports and the
                       threshold-exceedance comparison of the retrained intensity-based models
   prepare/            conversion of public data and derived data sets

@@ -39,7 +39,7 @@ Experiments (paper section in brackets):
                           process logs; the other treatments are the rank_change / process_logs runs   [8, S4]
   density_heads           Weibull-mixture and spline-flow heads (K = 8), GRU, five tied data sets, four
                           treatments; the log-normal mixture counterparts are the rank_change run
-                          (Supplementary Table S8)                                                    [5.3, S3]
+                          (Supplementary Table S7)                                                    [5.3, S3]
 """
 from __future__ import annotations
 
@@ -145,7 +145,7 @@ SIGMA_MIN, MU_MIN = 2.0, math.log(1e-4)
 BOUNDS = {"sigmin2": dict(sigma_min=SIGMA_MIN), "mumin1e-4": dict(mu_min=MU_MIN),
           "sigmin2_mumin1e-4": dict(sigma_min=SIGMA_MIN, mu_min=MU_MIN)}
 
-# further density heads (Supplementary Table S8): Weibull mixture and rational-quadratic spline flow
+# further density heads (Supplementary Table S7): Weibull mixture and rational-quadratic spline flow
 # (coarse_tpp.models), on the five data sets of rank_change with at least 1% test ties, under the two floors 1e-10
 # and 1e-6, uniform gap jitter and the interval likelihood
 HEADS_DATASETS = ("conttime_q10", "conttime_q02", "email_eu", "retweet", "volcano")

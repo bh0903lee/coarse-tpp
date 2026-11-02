@@ -1,4 +1,4 @@
-"""Joint rankings of time and mark (Supplementary S4, Table S13): rankings from stored results, and a tiny run."""
+"""Joint rankings of time and mark (Supplementary S4, Table S12): rankings from stored results, and a tiny run."""
 import json
 
 import numpy as np

@@ -248,7 +248,7 @@ class THPIntensity(_Intensity):
 
 
 # ------------------------------------------------------------------ further density heads
-# Two further flexible laws of the gap (density-heads experiment, Supplementary Table S8), both with closed-form
+# Two further flexible laws of the gap (density-heads experiment, Supplementary Table S7), both with closed-form
 # distribution functions so that the interval score is exact.
 LOG_K_LO, LOG_K_HI = math.log(0.05), math.log(20.0)     # Weibull shape bounds
 

@@ -1017,7 +1017,7 @@ def report_component_bounds(run, bases=(), seeds=X.REAL_SEEDS):
     return L, summary
 
 
-# ------------------------------------------------------------------ further density heads (Supplementary Table S8)
+# ------------------------------------------------------------------ further density heads (Supplementary Table S7)
 HEAD_FLOORS = tuple(X.FLOOR_ARMS)            # floor_1e-10, floor_1e-6, floor_1e-5 (test keys of every cell)
 HEAD_NAMES = {"weib": "Weibull mixture", "flow": "spline flow", "mix": "log-normal mixture"}
 MIN_SPREAD = 0.1                             # floor range counted as sensitive (nats per event)
@@ -1079,7 +1079,7 @@ def report_density_heads(run, bases=(), audit=None):
                 units.setdefault((ds, head), {})[arm] = seeds
     status = head_status(run)
     L = ["# Further density heads: floor sensitivity and the floor's self-preference", "",
-         "Exploratory (Supplementary Table S8). GRU; treatments " + ", ".join(X.HEADS_ARMS) + "; mix = the log-normal "
+         "Exploratory (Supplementary Table S7). GRU; treatments " + ", ".join(X.HEADS_ARMS) + "; mix = the log-normal "
          "mixture of the rank_change run restricted to the same four treatments. Learning rate per (data set, head, "
          "treatment) by dev C; test scores of the C-selected checkpoints, means over seeds (nats per event). Floor range: "
          "max - min over the floors 1e-10, 1e-6, 1e-5 of the model trained with floor 1e-6. Margin: top minus second "

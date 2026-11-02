@@ -1,6 +1,6 @@
 """Threshold-exceedance forecasts and remaining time on the process logs: does the choice of score change a
 probability prediction made from the model? (Section 5.3, "Consequence for probability prediction"; Supplementary S4,
-Table S12.) Exploratory, no training. The horizons are derived from the data and illustrate deadline (SLA-style)
+Table S11.) Exploratory, no training. The horizons are derived from the data and illustrate deadline (SLA-style)
 monitoring; they are not observed service-level agreements, and no alarm policy or operational utility is evaluated.
 
     python -m coarse_tpp.alarms score RUN_DIR [--base TRI_RUN] [--tasks sla,rt] [--datasets bpi_sepsis ...]
@@ -839,7 +839,7 @@ def cmd_report(a):
     datasets = sorted({u[0] for u in cands}, key=lambda d: (d not in PRIMARY_DS, d))
     hdr = data_header(datasets, deltas)
     L = ["# SLA alarms and remaining time on the process logs (exploratory, no training)", "",
-         "Supplementary S4, Table S12. BPIC12 and Sepsis (more than 1% ties) are the main logs, the others auxiliary; the "
+         "Supplementary S4, Table S11. BPIC12 and Sepsis (more than 1% ties) are the main logs, the others auxiliary; the "
          "analysis is descriptive.", "",
          "Inputs: " + "; ".join(f"{k}: {v}" for k, v in info.items()) + ".",
          f"SLA-scored cells: {len(scored)} of {len(cells)}; stale (cached for other checkpoints; re-run score): {len(stale)}"

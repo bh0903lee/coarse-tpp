@@ -1,4 +1,4 @@
-"""Shared helpers for the EasyTPP models of Section 5.2 and Supplementary Tables S3-S5: the two vendored EasyTPP copies,
+"""Shared helpers for the EasyTPP models of Section 5.2 and Supplementary Tables S2-S4: the two vendored EasyTPP copies,
 the data sets and their single-file EasyTPP pickles, the run layout and the content hashes that bind every result to
 its inputs.
 
