@@ -1,5 +1,5 @@
 """Per-event scores of trained EasyTPP models (nine architectures) under floors, the interval score and, for marked
-data, the joint score of time and mark (Section 5.2, Supplementary Tables S2-S4). Used by coarse_tpp.rescore_retrained
+data, the joint score of time and mark (Section 5.2, Online Resource 1, Tables S2-S4). Used by coarse_tpp.rescore_retrained
 and coarse_tpp.intensity_exceedance; no training.
 
 Conventions (as each model's own log-likelihood): the sequences enter in EasyTPP's batch layout (float32 times and

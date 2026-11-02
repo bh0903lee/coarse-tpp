@@ -1,5 +1,5 @@
 """Component edits: decomposition of the floor's self-preference margin into the location and the scale of the
-mixture component at the tie (Supplementary S4, "Component location and scale", Table S8). No training.
+mixture component at the tie (Online Resource 1, Section S4, "Component location and scale", Table S8). No training.
 
     python -m coarse_tpp.component_edits score RUN_DIR [--shard i/n] [--limit N] [--cpu] [--force] [--retry-quarantined]
     python -m coarse_tpp.component_edits report RUN_DIR
@@ -434,7 +434,7 @@ def cmd_report(run, out):
     allrecs = [r for v in recs.values() for r in v]
     maxdiff = max((m["abs_diff"] for r in allrecs for m in r["models"].values()), default=float("nan"))
     L = ["# Component edits: location and scale of the component at the tie (no training)", "",
-         "Exploratory diagnostic of saved checkpoints on test events (Supplementary S4), not a correction.", "",
+         "Exploratory diagnostic of saved checkpoints on test events (Online Resource 1, Section S4), not a correction.", "",
          f"Units (test tie share >= {TIE_MIN:.0%}): " + ", ".join(f"{d}/{e}" for d, e in units) + ".",
          f"Work items scored: {len(allrecs)}/{len(expected)}; missing {len(missing)}; stale {len(stale)} (cached for other models "
          f"or checkpoints than the current selection; re-run score); quarantined {len(quar)} "

@@ -1,5 +1,5 @@
 """Joint rankings of time and mark: rankings of the training treatments of a marks run by the joint floor score and
-the joint interval score (Supplementary S4, "Marks", Table S12 and Fig. S5). Exploratory; no training and no
+the joint interval score (Online Resource 1, Section S4, "Marks", Table S12 and Fig. S5). Exploratory; no training and no
 re-scoring.
 
     python -m coarse_tpp.joint_rankings RUN_DIR [--out DIR]
@@ -73,7 +73,7 @@ def unit_row(u, arms):
 
 
 def summary_counts(rows):
-    """Counts over the units with test ties >= TIE_MIN (the statements of Supplementary S4)."""
+    """Counts over the units with test ties >= TIE_MIN (the statements of Online Resource 1, Section S4)."""
     tied = [r for r in rows if r["tie_share"] >= TIE_MIN]
     d = [r["joint_deficit_of_floor_top"] for r in tied]
     return dict(n_tied=len(tied), n_joint_changed=sum(r["joint_changed"] for r in tied),

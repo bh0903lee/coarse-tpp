@@ -1,5 +1,5 @@
 """Floor score on a continuous grid of floors: the trained models of a rank_change run re-scored at 37 floors
-(Supplementary S4, "Floors between and beyond the three", Fig. S3). Exploratory, no training.
+(Online Resource 1, Section S4, "Floors between and beyond the three", Fig. S3). Exploratory, no training.
 
     python -m coarse_tpp.floor_grid score RUN_DIR [--shard i/n] [--limit N] [--cpu] [--force] [--retry-quarantined]
     python -m coarse_tpp.floor_grid report RUN_DIR
@@ -26,7 +26,7 @@ Report (OUT/report.md, OUT/curves.csv, OUT/summary.json), per unit, on seed mean
   (c) share of grid floors whose top treatment is the model trained with the nearest training floor (log distance)
   (d) min / median / max over the grid of Kendall's tau between the floor ranking and the C ranking
   check: the top at eps = 1e-6 equals the top by the stored test floor_1e-6 (Table 4)
-and the structure quoted in Supplementary S4: whether each floor-trained model is first at its own training floor,
+and the structure quoted in Online Resource 1, Section S4: whether each floor-trained model is first at its own training floor,
 the grid floors other than the three at which a floor-trained model is first, the deficit of the model trained with
 1e-6 behind the top treatment a quarter decade on either side of 1e-6, and the largest spread of the eight treatments
 over the grid. curves.csv holds the seed-mean floor score of every treatment at every grid floor; summary.json the

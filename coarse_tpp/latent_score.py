@@ -13,7 +13,7 @@ scored on dev and test. Cached rows are reused only for a valid result with the 
   B_alt   log q_B(s_i) under the alternative readout (readout.ALT: raw <-> smooth, point_mass -> point_mass_raw)
 with tie / non-tie splits. Why both: the smooth readout builds the uniform in-cell position of the previous record
 into q_B and the raw readout does not, so a comparison of a smooth-type model with a raw-type model on B mixes the
-objective and the readout; the report of Supplementary S4 compares the triangular-kernel objective with each other
+objective and the readout; the report of Online Resource 1, Section S4 compares the triangular-kernel objective with each other
 treatment under the readout that is better for that treatment on the dev split (coarse_tpp.analysis).
 """
 from __future__ import annotations

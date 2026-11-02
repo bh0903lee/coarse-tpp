@@ -8,7 +8,7 @@ recorded data set is read from the audit table (coarse_tpp.audit).
 
 Experiments (paper section in brackets):
   synthetic               seven processes x 5 realizations x delta in {0, .01, .03, .1, .3, 1}, GRU, seven
-                          treatments (delta = 0: latent)                                            [6.1, S2, S3]
+                          treatments (delta = 0: latent)                                   [5.3, 6.1, S2, S3, S4]
   rank_change             mixture head, nine data sets, GRU and Transformer, eight treatments       [5.3, 6.2, S3]
   intensity_heads         RMTPP and THP heads, six data sets, five treatments                       [6.2, S2, S3]
   process_logs            seven business process logs, marks as inputs, GRU and Transformer         [5.3, 6.2, S3]
@@ -18,7 +18,7 @@ Experiments (paper section in brackets):
   inbin_smoothing         triangular kernel and two interval / jitter mixtures                       [8, S4]
   inbin_smoothing_seeds   triangular vs interval on the tied real data sets, 40 new seeds            [8, S4]
   marks                   mark head with the time treatments, and a control trained on marks alone  [8, S4]
-  coarsened_real          ContTime, Taxi, StackOverflow coarsened to delta = r x median gap        [6.1, S4]
+  coarsened_real          ContTime, Taxi, StackOverflow coarsened to delta = r x median gap   [5.3, 6.1, S4]
   resplit                 rank_change (GRU, five treatments) on new random splits                  [5.3, 6.2, S3]
   new_datasets            MemeTracker, MOOC and Wikipedia (control)                                [5.3, 6.2, S3]
   floor_convention        GRU + mixture models trained and selected under the floor 1e-6 convention, two
@@ -39,7 +39,7 @@ Experiments (paper section in brackets):
                           process logs; the other treatments are the rank_change / process_logs runs   [8, S4]
   density_heads           Weibull-mixture and spline-flow heads (K = 8), GRU, five tied data sets, four
                           treatments; the log-normal mixture counterparts are the rank_change run
-                          (Supplementary Table S7)                                                    [5.3, S3]
+                          (Table S7)                                                                  [5.3, S4]
 """
 from __future__ import annotations
 
@@ -137,7 +137,7 @@ FLOOR_CONV_DATASETS = ("amazon", "bookorder", "collegemsg", "conttime", "conttim
 FLOOR_CONV_PARAMS = ("standard", "sigma_sigmoid")
 FLOOR_CONV_SEEDS = tuple(range(10))
 
-# component bounds (Supplementary S4, "Component location and scale"): sigma_min in raw log-time units, mu_min the
+# component bounds (Online Resource 1, Section S4, "Component location and scale"): sigma_min in raw log-time units, mu_min the
 # floor of the raw log-time location (log of 10 x the largest floor)
 BOUNDS_DATASETS = ("email_eu", "retweet", "conttime_q10")
 BOUNDS_ARMS = SAME_DENSITY_ARMS
@@ -145,14 +145,14 @@ SIGMA_MIN, MU_MIN = 2.0, math.log(1e-4)
 BOUNDS = {"sigmin2": dict(sigma_min=SIGMA_MIN), "mumin1e-4": dict(mu_min=MU_MIN),
           "sigmin2_mumin1e-4": dict(sigma_min=SIGMA_MIN, mu_min=MU_MIN)}
 
-# further density heads (Supplementary Table S7): Weibull mixture and rational-quadratic spline flow
+# further density heads (Table S7): Weibull mixture and rational-quadratic spline flow
 # (coarse_tpp.models), on the five data sets of rank_change with at least 1% test ties, under the two floors 1e-10
 # and 1e-6, uniform gap jitter and the interval likelihood
 HEADS_DATASETS = ("conttime_q10", "conttime_q02", "email_eu", "retweet", "volcano")
 HEADS_ARMS = ("floor_1e-10", "floor_1e-6", "jitter_gap", "interval")
 DENSITY_HEADS = ("weib", "flow")
 
-# triangular kernel on coarsened and recorded data (Supplementary S4, "Smoothing objectives")
+# triangular kernel on coarsened and recorded data (Online Resource 1, Section S4, "Smoothing objectives")
 TRI_IW_S = (1, 16, 64)
 TRI_IW_R = (0.3, 1.0)
 TRI_IW_ARMS = tuple(f"iw_jitter_triangular_S{S}" for S in TRI_IW_S)

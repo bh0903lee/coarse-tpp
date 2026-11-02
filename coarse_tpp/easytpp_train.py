@@ -1,4 +1,4 @@
-"""Training of the EasyTPP models of Section 5.2 and Supplementary Tables S2-S4 with the vendored, patched EasyTPP
+"""Training of the EasyTPP models of Section 5.2 and Online Resource 1, Tables S2-S4 with the vendored, patched EasyTPP
 (third_party/easy_tpp_train, PATCHES.md). Three experiments, nine architectures, seeds 0-4:
 
   time_only   Email-EU, Retweet subsample, CollegeMsg; time-only objective (Table S2, Fig. 2, the threshold-

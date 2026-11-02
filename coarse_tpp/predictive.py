@@ -1,4 +1,4 @@
-"""Predictive accuracy of trained models of the rank_change experiment (Supplementary S4, Table S13). No training.
+"""Predictive accuracy of trained models of the rank_change experiment (Online Resource 1, Section S4, Table S13). No training.
 
     python -m coarse_tpp.predictive score RUN_DIR [--only CELL_ID] [--limit N] [--force]
     python -m coarse_tpp.predictive report RUN_DIR [--audit results/audit/audit.json]

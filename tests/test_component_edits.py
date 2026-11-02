@@ -1,4 +1,4 @@
-"""Component edits (Supplementary S4): pure functions, cache rules, and a tiny end-to-end run on CPU."""
+"""Component edits (Online Resource 1, Section S4): pure functions, cache rules, and a tiny end-to-end run on CPU."""
 import json
 import math
 from pathlib import Path

@@ -1,5 +1,5 @@
 """Bootstrap of the rankings of Table 4: how often the top treatment by the floor score (floor 1e-6) and by the
-interval score C differ under resampling of test sequences and training seeds (Supplementary S4, "Resampling",
+interval score C differ under resampling of test sequences and training seeds (Online Resource 1, Section S4, "Resampling",
 Table S6). Exploratory; no training and no re-scoring.
 
     python -m coarse_tpp.rank_bootstrap run RUN_DIR [--B 2000] [--out DIR]
@@ -113,7 +113,7 @@ def original(n, C, F6):
 
 
 def summary_counts(rows):
-    """Counts over the units with test ties >= TIE_MIN (the statements of Supplementary S4)."""
+    """Counts over the units with test ties >= TIE_MIN (the statements of Online Resource 1, Section S4)."""
     tied = [r for r in rows if r["tie_share"] >= TIE_MIN]
     changed = [r for r in tied if r["top_C"] != r["top_floor"]]
     return dict(n_tied=len(tied), n_changed=len(changed), n_changed_p_diff_ge=sum(r["p_diff"] >= P_MIN for r in changed),

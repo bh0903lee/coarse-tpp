@@ -3,6 +3,7 @@ import json
 import math
 
 import numpy as np
+from scipy import stats
 
 from pathlib import Path
 
@@ -25,6 +26,8 @@ def fabricate(run, cells):
         res = dict(cell_id=c["cell_id"], status="ok", config=cfg, arm=cfg["arm"], seed=cfg["seed"], expected_test_targets=10,
                    test=dict(c["test"], n_events=10, ll=c["test"]["C"]), dev=dict(ll=0.0), wall_sec=1.0, selected_epoch=1,
                    history=[], by_selection={"C": dict(dev_criterion=c["dev"], test=c["test"])})
+        if "own" in c:
+            res["by_selection"]["own"] = dict(dev_criterion=c["own"]["dev"], test=c["own"]["test"])
         (run / "cells" / c["cell_id"]).mkdir(parents=True, exist_ok=True)
         (run / "cells" / c["cell_id"] / "result.json").write_text(json.dumps(res))
         lines.append(json.dumps(dict(cell_id=c["cell_id"], config=str(p))))
@@ -59,6 +62,114 @@ def test_advantage_needs_min_seeds(tmp_path):
     fabricate(run, cells)
     L, s = A.report_real(run, "t", ("floor_1e-10", "floor_1e-6", "jitter_gap", "interval"), {"email_eu": dict(tie_share=0.2)})
     assert s["n_better"] == 0 and any("not judged (n = 2)" in x for x in L)
+
+
+def test_ranking_size_of_change_and_own_selection(tmp_path):
+    """Seeds, rank, margin and the two-sided interval of interval - floor 1e-6; under the own selection the floor model
+    is first by C as well."""
+    run = tmp_path / "run"
+    arms = ("floor_1e-10", "floor_1e-6", "jitter_gap", "interval")
+    base = {"floor_1e-10": -1.03, "floor_1e-6": -1.05, "jitter_gap": -0.99, "interval": -1.00}
+    rng = np.random.default_rng(4)
+    noise = {m: 0.004 * rng.standard_normal(5) for m in arms}
+    noise["jitter_gap"][2] = -0.08                                       # one seed on which the floor model wins
+    cells, C = [], {}
+    for arm in arms:
+        for s in range(5):
+            cfg = X.cell("t", run, "email_eu", arm, s, "lr1e3", 1.0)
+            c = C[(arm, s)] = base[arm] + noise[arm][s]
+            own = dict(dev=c, test={"C": -0.5 if arm == "floor_1e-6" else c, "floor_1e-6": 3.0 if arm == "floor_1e-6" else 1.0})
+            cells.append(dict(cell_id=cfg["cell_id"], config=cfg, dev=c, own=own,
+                              test={"C": c, "floor_1e-6": 3.0 if arm == "floor_1e-6" else 1.0}))
+    fabricate(run, cells)
+    L, s = A.report_real(run, "t", arms, {"email_eu": dict(tie_share=0.2)})
+    r = s["rankings"][0]
+    mean = {m: np.mean([C[(m, k)] for k in range(5)]) for m in arms}
+    order = sorted(arms, key=lambda m: -mean[m])
+    assert r["top_floor"] == "floor_1e-6" and r["top_C"] == order[0] and r["rank"] == order.index("floor_1e-6") + 1
+    assert math.isclose(r["margin"], mean[order[0]] - mean[order[1]]) and r["n_treatments"] == 4
+    assert r["order_C"] == order and r["order_floor"][0] == "floor_1e-6"
+    d = [C[(order[0], k)] - C[("floor_1e-6", k)] for k in range(5)]
+    assert (r["seeds_positive"], r["n_seeds"]) == (sum(x > 0 for x in d), 5)
+    iv = np.array([C[("interval", k)] - C[("floor_1e-6", k)] for k in range(5)])
+    h = stats.t.ppf(0.975, 4) * iv.std(ddof=1) / math.sqrt(5)
+    got = r["interval_floor6"]
+    assert math.isclose(got["mean"], iv.mean()) and math.isclose(got["lo"], iv.mean() - h) and math.isclose(got["hi"], iv.mean() + h)
+    assert s["changed_tied_rank_last3"] == 1 and s["tied_interval_floor6_above_zero"] == int(iv.mean() - h > 0)
+    assert s["own_selection_top_changed"] == 0 and s["own_selection_n"] == 1
+    assert any(x.startswith("Deficit: mean C of the top treatment by C") for x in L)
+
+
+def test_latent_rankings_against_b():
+    arms = A.LATENT_ARMS
+    B = dict(zip(arms, (-1.0, -1.1, -0.5, -0.52, -0.9, -0.505)))
+    C = dict(zip(arms, (-1.0, -1.1, -0.51, -0.6, -0.9, -0.5)))            # C ranks interval first, 0.005 short of the best B
+    fl = dict(zip(arms, (2.0, 1.0, -2.0, -3.0, 0.0, -1.0)))                # reversed relative to B
+    settings = {("SP", 1.0): {a: {"B": B[a], "C": C[a], "floor_1e-10": fl[a], "floor_1e-6": fl[a] - 1.0 * (a == "floor_1e-6"),
+                                   "floor_1e-5": B[a]} for a in arms},
+                ("SP", 0.3): {a: {"B": 0.0, "C": 0.0, "floor_1e-10": 0.0, "floor_1e-6": 0.0, "floor_1e-5": 0.0} for a in arms[:3]}}
+    rows = A.latent_rankings(settings)
+    assert len(rows) == 1 and rows[0]["top_B"] == "jitter_gap"            # the incomplete setting is left out
+    r = rows[0]
+    assert r["C"]["top"] == "interval" and math.isclose(r["C"]["shortfall"], 0.005)
+    assert math.isclose(r["C"]["tau"], stats.kendalltau([C[a] for a in arms], [B[a] for a in arms])[0])
+    assert math.isclose(r["floor_1e-5"]["tau"], 1.0) and r["floor_1e-5"]["shortfall"] == 0.0
+    assert r["floor_1e-10"]["top"] == "floor_1e-10" and math.isclose(r["floor_1e-10"]["shortfall"], 0.5)
+    sm = A.latent_summary(rows)
+    assert sm["C"]["within"] == 1 and sm["C"]["top_as_B"] == 0 and sm["floor_1e-5"]["top_as_B"] == 1
+    assert sm["floor_1e-10"]["own_model_first"] == 1 and sm["C_tau_above_floor_1e-10"] == 1
+    L, summ = A.latent_lines([("all", settings)], detail="all")
+    assert summ["all|six"]["n"] == 1 and summ["all|same density"]["n"] == 1 and summ["detail"] == rows
+
+
+def test_latent_settings_from_cells():
+    """Synthetic: seed means per realization, then the mean over realizations; coarsened: B from the latent rows by
+    cell, and a unit without B for a seed is left out."""
+    def cell(ds, arm, seed, lr, dev, test, enc="gru"):
+        cfg = dict(dataset=ds, encoder={"type": enc}, head="mix", K=8, lr_tag=lr, arm=arm, seed=seed)
+        return dict(cell_id=f"{ds}_{arm}_{lr}_{seed}", config=cfg, arm=arm, seed=seed,
+                    by_selection={"C": dict(dev_criterion=dev, test=test)})
+    t = lambda v: {k: v for k in A.LATENT_SCORES + ("B",)}
+    cells = [cell(S.name("SP", r, 1.0), "interval", s, lr, 0.0 if lr == "lr1e3" else -1.0, t(r + s + (lr == "lr3e4") * 10))
+             for r in (1, 2) for s in (0, 1) for lr in X.LRS]
+    cells += [cell(S.name("SP", 1, 0.0), "latent", 0, "lr1e3", 0.0, t(0.0))]
+    ls = A.syn_latent_settings(cells)
+    assert set(ls) == {("SP", 1.0)} and ls[("SP", 1.0)]["interval"]["B"] == 2.0            # mean of 1.5 and 2.5
+    cells.append(cell(S.name("SP", 1, 1.0), "jitter_gap", 0, "lr1e3", 0.0, t(0.0)))
+    assert ("SP", 1.0) not in A.syn_latent_settings(cells)                                # realizations differ
+    ds = X.COARSENED[0]
+    rc = [cell(ds, a, s, "lr1e3", 0.0, t(-1.0)) for a in ("interval", "jitter_gap") for s in range(3)]
+    latent = {c["cell_id"]: -2.0 - c["seed"] for c in rc if not (c["arm"] == "jitter_gap" and c["seed"] == 2)}
+    cs = A.coarsened_latent_settings(rc, latent, X.COARSENED)
+    assert set(cs[(ds, "gru")]) == {"interval"} and cs[(ds, "gru")]["interval"]["B"] == -3.0
+    assert cs[(ds, "gru")]["interval"]["C"] == -1.0
+
+
+def test_report_coarsened_ranks_against_b(tmp_path):
+    """Floors and C from result.json, B from latent_scores.jsonl; a row flagged mismatch removes its unit."""
+    run = tmp_path / "run"
+    ds = X.COARSENED[0]
+    B = dict(zip(A.LATENT_ARMS, (-1.2, -1.3, -1.0, -1.05, -1.1, -1.01)))
+    cells, rows = [], []
+    for arm in A.LATENT_ARMS:
+        for s in range(5):
+            cfg = X.cell("coarsened_real", run, ds, arm, s, "lr1e3", 1.0)
+            test = {"C": B[arm] - 0.1, "floor_1e-10": -B[arm], "floor_1e-6": -B[arm], "floor_1e-5": B[arm]}
+            cells.append(dict(cell_id=cfg["cell_id"], config=cfg, dev=test["C"], test=test))
+            rows.append(dict(cell_id=cfg["cell_id"], arm=arm, seed=s, mismatch=False, dev_crit=test["C"], dev={},
+                             config=dict(dataset=ds, encoder=cfg["encoder"], head="mix", K=8, lr_tag="lr1e3"),
+                             test=dict(B=B[arm], C=test["C"])))
+    fabricate(run, cells)
+    (run / "latent_scores.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    L, s = A.report_coarsened(run, {}, datasets=(ds,))
+    sm = s["latent_rankings"]["coarsened|six"]
+    assert sm["n"] == 1 and math.isclose(sm["C"]["median_tau"], 1.0) and sm["C"]["top_as_B"] == 1
+    assert math.isclose(sm["floor_1e-6"]["median_tau"], -1.0) and math.isclose(sm["floor_1e-6"]["mean_shortfall"], 0.3)
+    assert any("Rankings of the treatments by each score against" in x for x in L)
+    rows[0]["mismatch"] = True
+    (run / "latent_scores.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    _, s2 = A.report_coarsened(run, {}, datasets=(ds,))
+    assert s2["latent_rankings"]["coarsened|six"]["n"] == 0
 
 
 def test_floor_convention_has_no_training_report(tmp_path):

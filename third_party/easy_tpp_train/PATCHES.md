@@ -1,6 +1,6 @@
 # Patches of the vendored EasyTPP training copy
 
-Each patch is marked `Patch` in the source. The models of Section 5.2 and Supplementary Tables S2-S4 were trained
+Each patch is marked `Patch` in the source. The models of Section 5.2 and Online Resource 1, Tables S2-S4 were trained
 with exactly this code. No patch changes the forward computation of a model: the intensities, the cumulative hazard
 of FullyNN and the mixture of IntensityFree are those of the source files, and the files differ from the source only
 in the training objective, the training loop and the data pipeline listed here.
@@ -31,7 +31,7 @@ in the training objective, the training loop and the data pipeline listed here.
    `torch_s2p2.py` and `torch_mamba.py` the loss is `-(time_ll_pos - non_event_ll).sum()` (log total intensity at the
    event minus the compensator, without the mark term) unless `mark_loss_on()`, in which case it is the source's
    `-(event_ll - non_event_ll).sum()`; `torch_intensity_free.py` likewise drops the categorical mark term unless
-   `mark_loss_on()`. On single-mark data the two objectives coincide. The time-only experiments (Supplementary Tables
+   `mark_loss_on()`. On single-mark data the two objectives coincide. The time-only experiments (Online Resource 1, Tables
    S2 and S4) leave the variable unset; the joint experiment (Table S3) sets it to `1`.
 2. `torch_fullynn.py`, `loglike_loss`: the source returned `(loss, num_events)`, while the training wrapper of this
    version expects five values, so the model could not be trained. The patched method returns

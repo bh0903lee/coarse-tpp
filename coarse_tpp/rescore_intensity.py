@@ -1,6 +1,6 @@
 """Re-scoring of trained intensity-based models (RMTPP, NHP, SAHP, AttNHP of EasyTPP) under floors and the interval
 score with a single Gauss-Legendre rule per gap (Section 5.2). The trained-models archive provides the original
-graded rules. The retrained models of Supplementary Tables S2-S4 (nine architectures, stratified S2P2 compensator,
+graded rules. The retrained models of Online Resource 1, Tables S2-S4 (nine architectures, stratified S2P2 compensator,
 joint scores) are scored by coarse_tpp.rescore_retrained. No training.
 
     python -m coarse_tpp.rescore_intensity score --ckpt CKPT_DIR --out OUT_DIR [--datasets ...] [--nodes 32]

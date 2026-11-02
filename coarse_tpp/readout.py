@@ -8,7 +8,7 @@ treatment:
               q_B(s) = (Q(s) - Q(s - delta)) / delta
               (latent-gap models convolved with the U(0, delta) position of the previous record)
   point_mass  point_mass    q_B(s) = pi 1[s < delta] / delta + (1 - pi)(Q(s) - Q(s - delta)) / delta
-The alternative readout of each rule (ALT; reported by coarse_tpp.latent_score, Supplementary S4): raw <-> smooth,
+The alternative readout of each rule (ALT; reported by coarse_tpp.latent_score, Online Resource 1, Section S4): raw <-> smooth,
 and point_mass_raw for the point-mass model, whose B is the density part (1 - pi) q(s).
 Scores:
   C (recorded cell)   log of the probability of the recorded cell [tau~, tau~ + delta) under q_B
