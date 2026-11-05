@@ -23,7 +23,8 @@ the trained-models archive up to the paths), EasyTPP's own <identifier>/<model>/
 log, *_output.yaml}, and result.json, written last: status 'ok' | 'nan_stop' (EasyTPP stopped on a NaN epoch loss;
 fewer epochs than requested) | 'error' (exception, traceback recorded); the best checkpoint saved before a failure is
 kept. result.json records the experiment, the mark-loss switch as the loss code saw it, the data file and its SHA-256,
-the device and the checkpoint SHA-256. Finished runs (result.json present) are skipped unless --force.
+the device and the checkpoint SHA-256. Finished runs (result.json present) are skipped unless --force; a finished run with another experiment, number of
+epochs or max_seqs raises an error.
 
 The paper's models were trained on single GPUs (NVIDIA H100 NVL or RTX A6000) with one CPU thread; retraining on
 other hardware gives different weights. On CPU, the trainer uses gpu = -1.
@@ -137,7 +138,13 @@ def train_one(experiment: str, ds: str, model: str, seed: int, data_dir, out, ep
         raise ValueError(f"unknown model {model}")
     rdir = Path(out) / ds / model / f"s{seed}"
     if (rdir / "result.json").exists() and not force:
-        return json.loads((rdir / "result.json").read_text())
+        old = json.loads((rdir / "result.json").read_text())
+        req = dict(experiment=experiment, epochs=epochs, max_seqs=max_seqs or None)
+        diff = {k: (old[k], v) for k, v in req.items() if k in old and old[k] != v}
+        if diff:
+            raise ValueError(f"{rdir}: the existing result was produced with other settings (stored, requested): {diff}; "
+                             "use another output directory or force=True")
+        return old
     if force and rdir.exists():
         shutil.rmtree(rdir)
     rdir.mkdir(parents=True, exist_ok=True)

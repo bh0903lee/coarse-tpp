@@ -331,7 +331,13 @@ def smoke(tmp_path, monkeypatch, data_root):
 
 def test_train_score_check_and_report_on_cpu(smoke, monkeypatch):
     s = smoke
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)   # CPU even where a GPU is visible
     rec = T.train_one("joint", "retweet_sub", "RMTPP", 0, s["prep"], s["runs"], epochs=1)
+    assert T.train_one("joint", "retweet_sub", "RMTPP", 0, s["prep"], s["runs"], epochs=1) == rec   # resumed
+    with pytest.raises(ValueError, match="other settings"):
+        T.train_one("time_only", "retweet_sub", "RMTPP", 0, s["prep"], s["runs"], epochs=1)
+    with pytest.raises(ValueError, match="other settings"):
+        T.train_one("joint", "retweet_sub", "RMTPP", 0, s["prep"], s["runs"], epochs=2)
     assert rec["status"] == "ok" and rec["mark_loss"] is True and rec["checkpoint_sha256"]
     rdir = s["runs"] / "retweet_sub" / "RMTPP" / "s0"
     cfg = yaml.safe_load((rdir / "config_in.yaml").read_text())

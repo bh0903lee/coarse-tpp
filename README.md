@@ -46,7 +46,7 @@ set `COARSE_TPP_DATA` to your data directory and use module entry points, for ex
 `python -m coarse_tpp.rescore_intensity --help`.
 
 To check the built distribution, run `pip wheel --no-deps --wheel-dir dist .`, then
-`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.5-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
+`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.6-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
 This check rebuilds and scores all four supported intensity models from the wheel in a separate process, without
 source-checkout imports, and verifies the vendored files against their recorded hashes.
 
