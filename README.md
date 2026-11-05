@@ -46,7 +46,7 @@ set `COARSE_TPP_DATA` to your data directory and use module entry points, for ex
 `python -m coarse_tpp.rescore_intensity --help`.
 
 To check the built distribution, run `pip wheel --no-deps --wheel-dir dist .`, then
-`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.4-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
+`COARSE_TPP_TEST_WHEEL="$PWD/dist/coarse_tpp-1.2.5-py3-none-any.whl" python -m pytest -q tests/test_wheel.py`.
 This check rebuilds and scores all four supported intensity models from the wheel in a separate process, without
 source-checkout imports, and verifies the vendored files against their recorded hashes.
 
@@ -134,6 +134,9 @@ python scripts/report.py EXPERIMENT runs/EXPERIMENT                   # writes r
 | Section 8 and S4 (marks) | `marks` | 420 |
 | Section S4, Table S12 and Fig. S5 (joint rankings of time and mark; no training) | after `marks`: `scripts/joint_rankings.py runs/marks` (writes `runs/marks/joint_rankings/`) | — |
 | Section 5.3, S4 and Table S7 (other density heads: Weibull mixture, spline flow) | `density_heads` (report with `--base runs/rank_change`) | 400 |
+| Sections 5.3, 6.2 and S4 (ten seeds per treatment: `rank_change` with seeds 5–9, reported with seeds 0–4 and the learning rate chosen on the ten-seed dev mean) | `rank_change_seeds` (report with `--base runs/rank_change`) | 1,440 |
+| Sections 5.3, 8 and S4 (wider encoders: GRU of width 128; Transformer of width 128, four layers, four heads, feed-forward width 256; rankings by the floor 10⁻¹⁰ score) | `wider_encoders` | 400 |
+| Sections 5.3 and S4 (K ∈ {1, 2, 4, 8, 16} mixture components, GRU; rankings by the floor 10⁻¹⁰ score, one report section per K) | `mixture_components` | 1,000 |
 | Section S4 and Fig. S3 (floor score on a grid of 37 floors; no training) | after `rank_change`: `scripts/floor_grid.py score runs/rank_change` (`--cpu`, `--shard i/n`), then `scripts/floor_grid.py report runs/rank_change` (writes `runs/rank_change/floor_grid/`) | — |
 | Section S4 and Table S6 (bootstrap of the rankings; no training) | after `rank_change`: `scripts/rank_bootstrap.py run runs/rank_change` (writes `runs/rank_change/rank_bootstrap/`) | — |
 | Section 5.3, S4 and Table S13 (predictive accuracy of the selected models; no training) | after `rank_change`: `scripts/predictive_accuracy.py score runs/rank_change`, then `scripts/predictive_accuracy.py report runs/rank_change` | — |
@@ -153,7 +156,8 @@ intervals are one-sided 95% t intervals (two-sided for the interval − ε = 10�
 *violated*: upper bound < −0.01; *advantage*: Holm-adjusted p < 0.05 and a mean gain ≥ 0.01 nats over the strongest
 non-interval treatment chosen by dev C. These rules are implemented in `coarse_tpp/analysis.py`.
 
-The component and triangular-kernel analyses (Tables S8–S11, the triangular comparison of Section S4) are implemented in this
+The component and triangular-kernel analyses (Tables S8–S11, the triangular comparison of Section S4) and the three
+robustness checks of the rankings (`rank_change_seeds`, `wider_encoders`, `mixture_components`) are implemented in this
 release; their full training and checkpoint-scoring pipelines have not been rerun end to end with this public package.
 Unit tests and small integration tests validate the implementation, and the aggregation functions reproduce the
 published tables from the original result files; matching those tables requires the specified data, grids, selection
@@ -168,12 +172,16 @@ can differ more (up to about 2e-3 nats in a CPU re-scoring of IntensityFree mode
 Cached scores (`rescore.jsonl`, `latent_scores.jsonl`, predictive, remaining-time and intensity score files) record
 the configuration and checkpoint they were computed from and are reused or reported only while these still match;
 files without this record are shown as stale or pending until re-scored (latent-time rows stay readable). An
-interrupted scoring call resumes from its `.tmp` file.
+interrupted scoring call resumes from its `.tmp` file. The check covers the configuration and the checkpoint only:
+after changing the input data, the preprocessing or the scoring code, write to a new output directory or re-score.
 
 ## Reproduction scope
 
-The commands above implement every analysis of the paper and of Online Resource 1, and the reports contain the
-values given in the text and tables. Scripts that draw the figures are not included; the reports contain the plotted
+The commands above implement the analyses of the paper and of Online Resource 1, including the robustness checks
+of the treatment rankings (ten seeds, wider encoders, number of mixture components: `rank_change_seeds`,
+`wider_encoders`, `mixture_components`), and the reports contain the values given in the text and tables; values
+stated for a subset of combinations (for example without Volcano) are read from the per-combination rows.
+Scripts that draw the figures are not included; the reports contain the plotted
 values (Fig. 1 is a diagram without data). Table S6 lists the data sets in the
 order and with the tie shares of Table 1 (the audit); its report gives the tie shares of the test split. Trained models
 that are distributed are listed below; all other results are reproduced by training with the commands above. The

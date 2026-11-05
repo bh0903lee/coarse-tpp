@@ -51,6 +51,32 @@ def test_report_real_on_a_fabricated_run(tmp_path):
     assert s["own_floor_first"] == 1 and math.isfinite(s["tau_median"])
 
 
+def test_report_real_pools_runs_and_ranks_by_another_floor(tmp_path):
+    """Seeds of two runs are pooled (lr chosen on the pooled dev mean); with floor="floor_1e-10" the ranking uses that
+    score and the self-preference counts the model trained with it; keep restricts the groups."""
+    arms = ("floor_1e-10", "jitter_gap", "point_mass", "interval")
+    base = {"floor_1e-10": -1.03, "jitter_gap": -0.99, "point_mass": -1.01, "interval": -0.98}
+    for name, seeds in (("a", range(5)), ("b", range(5, 10))):
+        cells = []
+        for arm in arms:
+            for K in (1, 8):
+                for lr in ("lr3e4", "lr1e3"):
+                    for s in seeds:
+                        cfg = X.cell("t", tmp_path / name, "email_eu", arm, s, lr, 1.0, K=K)
+                        C = base[arm] + 0.001 * s + (0.0 if lr == "lr1e3" else -0.05)
+                        cells.append(dict(cell_id=cfg["cell_id"], config=cfg, dev=C,
+                                          test={"C": C, "floor_1e-10": 3.0 if arm == "floor_1e-10" else 1.0}))
+        fabricate(tmp_path / name, cells)
+    audit = {"email_eu": dict(tie_share=0.2)}
+    L, s = A.report_real(tmp_path / "a", "t", arms, audit, floor="floor_1e-10", bases=[tmp_path / "b"],
+                         keep=lambda g: g[3] == 8)
+    assert s["n_rankings"] == 1 and s["rankings"][0]["n_seeds"] == 10 and s["floor_score"] == "floor_1e-10"
+    assert s["own_floor_first_tied"] == 1 and s["top_changed_tied"] == 1 and s["changed_tied_rank_last"] == 1
+    assert s["preservation"]["preserved"] == 1 and not any("interval - floor 1e-6 has" in x for x in L)
+    L, s = A.report_mixture_components(tmp_path / "a", audit)
+    assert s["n_rankings"] == 2 and s["own_floor_first"] == 2 and s["by_K"][16]["n_rankings"] == 0
+
+
 def test_advantage_needs_min_seeds(tmp_path):
     run = tmp_path / "run"
     cells = []

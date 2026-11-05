@@ -342,7 +342,7 @@ def test_train_score_check_and_report_on_cpu(smoke, monkeypatch):
     c = json.loads(cell.read_text())
     assert any("full run" in p for p in c["problems"])            # one epoch: not a full run
     assert math.isfinite(c["test"]["joint_interval"]) and c["repro_logged"]["primary"] == "joint"
-    # the logged training estimate and ours agree up to the Monte Carlo error of EasyTPP's 4-sample compensator
+    # the logged training estimate and ours agree up to the Monte Carlo error of EasyTPP's 10-sample compensator
     assert c["repro_logged"]["time_dev"] < 1.0
     mtime = cell.stat().st_mtime_ns
     R.score("joint", s["runs"], s["prep"], s["out"], models=["RMTPP"], seeds=(0,), rule=rule, audit=s["audit"])

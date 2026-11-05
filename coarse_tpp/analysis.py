@@ -75,6 +75,21 @@ def load_cells(run: Path, with_status=False):
     return (out, st) if with_status else out
 
 
+def load_runs(runs, keep=None):
+    """Cells, merged status and planned groups of several runs (each restricted to its complete seeds), optionally
+    only the groups with keep(group)."""
+    keep = keep or (lambda g: True)
+    cells, st, groups = [], dict(n_expected=0, n_ok=0, n_used=0, n_walltime=0, failed=[], finished=True), set()
+    for r in runs:
+        c, s = load_cells(r, with_status=True)
+        cells += [x for x in c if keep(cell_key(x["config"])[0])]
+        for k in ("n_expected", "n_ok", "n_used", "n_walltime", "failed"):
+            st[k] += s[k]
+        st["finished"] = st["finished"] and s["finished"]
+        groups |= {g for g in planned_groups(r) if keep(g)}
+    return cells, st, sorted(groups)
+
+
 def status_lines(st):
     return [f"cells: {st['n_ok']}/{st['n_expected']} ok, {st['n_used']} used after the complete-seed restriction, "
             f"{st['n_walltime']} stopped by the wall-clock limit (excluded), {len(st['failed'])} failed (excluded); "
@@ -143,15 +158,15 @@ def t_two_sided(x):
     return float(x.mean()), float(x.mean() - h), float(x.mean() + h)
 
 
-def rankings(units, groups, arms, sel="C"):
-    """Per group with at least three of `arms`: the rankings of the treatments by mean test floor 1e-6 and by mean test
-    C (checkpoints and learning rates of selection `sel`), and the size of the change of the top treatment."""
+def rankings(units, groups, arms, sel="C", floor="floor_1e-6"):
+    """Per group with at least three of `arms`: the rankings of the treatments by mean test `floor` score and by mean
+    test C (checkpoints and learning rates of selection `sel`), and the size of the change of the top treatment."""
     out = []
     for g in groups:
         ms = [m for m in arms if g + (m,) in units]
         if len(ms) < 3:
             continue
-        e6 = [float(np.mean([val(x, "floor_1e-6", sel) for x in units[g + (m,)].values()])) for m in ms]
+        e6 = [float(np.mean([val(x, floor, sel) for x in units[g + (m,)].values()])) for m in ms]
         cc = [float(np.mean([val(x, "C", sel) for x in units[g + (m,)].values()])) for m in ms]
         a, b = ms[int(np.argmax(e6))], ms[int(np.argmax(cc))]
         d = paired(units, g + (b,), g + (a,), "C", sel)
@@ -220,13 +235,15 @@ def cost_lines(cells, arms, base):
 
 
 # ------------------------------------------------------------------ recorded data
-def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_density=None):
+def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_density=None, floor="floor_1e-6", bases=(),
+                keep=None):
     """Test C table, advantage over the strongest non-interval treatment, preservation, the rankings of the treatments
-    by the floor score (eps = 1e-6) and by C with the size of the change, and the same rankings when every treatment
-    is selected by its own dev objective."""
-    cells, st = load_cells(run, with_status=True)
+    by the floor score (`floor`, default eps = 1e-6) and by C with the size of the change, and the same rankings when
+    every treatment is selected by its own dev objective. `bases`: further runs whose cells are pooled with those of
+    `run` (e.g. other seeds of the same grid); `keep`: only the groups with keep(group)."""
+    cells, st, groups = load_runs([run, *bases], keep)
     units = select_lr(cells)
-    groups = planned_groups(run)
+    fl = floor.replace("_", " ")
     non = [m for m in arms if m != "interval"]
     tie = lambda ds: audit.get(ds, {}).get("tie_share", NAN)
     L = [f"# {title}", "", "Score: test C (recorded-cell log-likelihood per event) at the dev-C learning rate; seed-paired.", ""]
@@ -285,13 +302,13 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
                 parts.append(f"{m} {fmt(float(np.mean(d)))}")
         L.append(f"- {g[0]} {g[1]} {g[2]}: " + ", ".join(parts))
     # rankings
-    rk = rankings(units, groups, arms)
-    L += ["", "## Ranking of the treatments by the floor score (eps = 1e-6) and by C (Kendall tau; top treatment)", "",
+    rk = rankings(units, groups, arms, floor=floor)
+    L += ["", f"## Ranking of the treatments by the floor score (eps = {floor[6:]}) and by C (Kendall tau; top treatment)", "",
           "Deficit: mean C of the top treatment by C minus that of the top treatment by the floor score. Seeds: seeds on "
           "which this seed-paired difference is positive. Rank: rank of the floor's top treatment among all treatments by "
           "mean C. Margin: mean C of the first minus the second treatment by C. Last column: interval - floor 1e-6, "
           "seed-paired mean [two-sided 95% t interval].", "",
-          "| data set | encoder | head | ties | tau | top by floor 1e-6 | top by C | C deficit of floor top | seeds | rank | "
+          f"| data set | encoder | head | ties | tau | top by {fl} | top by C | C deficit of floor top | seeds | rank | "
           "margin | interval - floor 1e-6 |",
           "|---|---|---|---:|---:|---|---|---:|---:|---:|---:|---|"]
     for r in rk:
@@ -301,7 +318,7 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
         ivs = f"{fmt(iv['mean'])} [{fmt(iv['lo'])}, {fmt(iv['hi'])}] (n = {iv['n']})" if iv else "—"
         L.append(f"| {g[0]} | {g[1]} | {g[2]} | {tie(g[0]):.4f} | {fmt(r['tau'], 2)} | {a} | {b}{' (same)' if a == b else ''} | "
                  f"{fmt(r['deficit'])} | {seeds} | {r['rank']} | {r['margin']:.4f} | {ivs} |")
-    L += ["", "Rankings, first to last:", "", "| data set | encoder | head | by floor 1e-6 | by C |", "|---|---|---|---|---|"]
+    L += ["", "Rankings, first to last:", "", f"| data set | encoder | head | by {fl} | by C |", "|---|---|---|---|---|"]
     L += [f"| {r['group'][0]} | {r['group'][1]} | {r['group'][2]} | {', '.join(r['order_floor'])} | {', '.join(r['order_C'])} |"
           for r in rk]
     changed = sum(r["top_floor"] != r["top_C"] for r in rk)
@@ -309,38 +326,40 @@ def report_real(run, title, arms, audit, controls=(), tied_min=0.01, same_densit
     tied_changed = [r for r in tied if r["top_floor"] != r["top_C"]]
     taus = [r["tau"] for r in rk]
     summ = dict(n_rankings=len(rk), top_changed=changed, n_tied=len(tied), top_changed_tied=len(tied_changed),
-                own_floor_first=sum(r["top_floor"] == "floor_1e-6" for r in rk),
-                own_floor_first_tied=sum(r["top_floor"] == "floor_1e-6" for r in tied),
-                floor6_first_by_C=sum(r["top_C"] == "floor_1e-6" for r in rk),
+                floor_score=floor, own_floor_first=sum(r["top_floor"] == floor for r in rk),
+                own_floor_first_tied=sum(r["top_floor"] == floor for r in tied),
+                floor_first_by_C=sum(r["top_C"] == floor for r in rk),
                 interval_first_by_C=sum(r["top_C"] == "interval" for r in rk),
                 interval_first_by_C_tied=sum(r["top_C"] == "interval" for r in tied),
                 tau_median=float(np.median(taus)) if taus else None, tau_min=min(taus) if taus else None,
                 tau_max=max(taus) if taus else None, n_better=int(n_better), n_family=len(fam),
                 changed_tied_rank_last3=sum(r["rank"] >= r["n_treatments"] - 2 for r in tied_changed),
+                changed_tied_rank_last=sum(r["rank"] == r["n_treatments"] for r in tied_changed),
                 changed_tied_every_seed=sum(r["seeds_positive"] == r["n_seeds"] > 0 for r in tied_changed),
                 tied_interval_floor6_above_zero=sum(bool(r["interval_floor6"]) and r["interval_floor6"]["lo"] > 0 for r in tied),
                 rankings=[dict(r, group="|".join(map(str, r["group"]))) for r in rk],
                 preservation=counts, preservation_detail=pres, finished=st["finished"])
     L += ["", f"Top treatment differs between the two scores in {changed}/{len(rk)} combinations "
-          f"({summ['top_changed_tied']}/{len(tied)} with >= {tied_min:.0%} ties); the model trained with floor 1e-6 is first "
+          f"({summ['top_changed_tied']}/{len(tied)} with >= {tied_min:.0%} ties); the model trained with {fl} is first "
           f"by the floor score in {summ['own_floor_first']} ({summ['own_floor_first_tied']} tied) and by C in "
-          f"{summ['floor6_first_by_C']}; the interval model is first by C in {summ['interval_first_by_C']} "
+          f"{summ['floor_first_by_C']}; the interval model is first by C in {summ['interval_first_by_C']} "
           f"({summ['interval_first_by_C_tied']} tied); median Kendall tau {fmt(summ['tau_median'], 2)}.",
           f"Where the top treatment changed on tied data ({len(tied_changed)}), the floor's top treatment is among the last "
-          f"three by C in {summ['changed_tied_rank_last3']} and trails the top by C on every seed in "
-          f"{summ['changed_tied_every_seed']}; interval - floor 1e-6 has a 95% interval above zero in "
-          f"{summ['tied_interval_floor6_above_zero']}/{len(tied)} tied combinations."]
+          f"three by C in {summ['changed_tied_rank_last3']} (last in {summ['changed_tied_rank_last']}) and trails the top "
+          f"by C on every seed in {summ['changed_tied_every_seed']}"
+          + (f"; interval - floor 1e-6 has a 95% interval above zero in {summ['tied_interval_floor6_above_zero']}/"
+             f"{len(tied)} tied combinations." if "floor_1e-6" in arms else ".")]
     if same_density:
-        rs = rankings(units, groups, same_density)
+        rs = rankings(units, groups, same_density, floor=floor)
         summ["same_density_top_changed"] = sum(r["top_floor"] != r["top_C"] for r in rs)
         L += [f"Restricted to the treatments scored on the same raw density ({', '.join(same_density)}): top treatment "
               f"differs in {summ['same_density_top_changed']}/{len(rs)} combinations."]
     if cells and all("own" in x["by_selection"] for x in cells):
-        ro = rankings(select_lr(cells, "own"), groups, arms, "own")
+        ro = rankings(select_lr(cells, "own"), groups, arms, "own", floor)
         summ["own_selection_top_changed"] = sum(r["top_floor"] != r["top_C"] for r in ro)
         summ["own_selection_n"] = len(ro)
         L += ["", "## Ranking with learning rate and checkpoint selected by each treatment's own dev objective", "",
-              "| data set | encoder | head | tau | top by floor 1e-6 | top by C |", "|---|---|---|---:|---|---|"]
+              f"| data set | encoder | head | tau | top by {fl} | top by C |", "|---|---|---|---:|---|---|"]
         L += [f"| {r['group'][0]} | {r['group'][1]} | {r['group'][2]} | {fmt(r['tau'], 2)} | {r['top_floor']} | {r['top_C']}"
               f"{' (same)' if r['top_floor'] == r['top_C'] else ''} |" for r in ro]
         L += ["", f"Top treatment differs in {summ['own_selection_top_changed']}/{len(ro)} combinations."]
@@ -1294,6 +1313,34 @@ def report_density_heads(run, bases=(), audit=None):
     return L, dict(rows=rows, heads=agg)
 
 
+# ------------------------------------------------------------------ robustness checks of rank_change (Section S4)
+ROBUST_KEYS = ("n_rankings", "top_changed", "n_tied", "top_changed_tied", "own_floor_first", "own_floor_first_tied",
+               "changed_tied_rank_last3", "changed_tied_rank_last", "n_better", "n_family")
+
+
+def report_rank_change_seeds(run, bases=(), audit=None):
+    """rank_change with seeds 5-9 pooled with the rank_change run (seeds 0-4, pass it with --base): ten seeds per
+    treatment, the learning rate chosen on the ten-seed dev mean."""
+    L, s = report_real(run, "Rankings of training treatments (mixture head), ten seeds", X.RANK_ARMS, audit or {},
+                       controls=X.RANK_CONTROLS, same_density=X.SAME_DENSITY_ARMS, bases=bases)
+    L[1:1] = ["", "Seeds 5-9 of this run" + (" pooled with seeds 0-4 of " + ", ".join(map(str, bases)) if bases else
+                                         " only (pass the rank_change run with --base for the ten-seed report)") + "."]
+    return L, s
+
+
+def report_mixture_components(run, audit=None):
+    """report_real once per number of mixture components K (Holm within K); rankings by the floor 1e-10 score."""
+    L, by_k = ["# Number of mixture components: rankings of training treatments by K"], {}
+    for k in X.MIX_K:
+        Lk, by_k[k] = report_real(run, f"K = {k}", X.WIDE_ARMS, audit or {}, floor="floor_1e-10", keep=lambda g, k=k: g[3] == k)
+        L += [""] + Lk
+    tot = {key: sum(v[key] for v in by_k.values()) for key in ROBUST_KEYS}
+    L += ["", f"**Over K: the top treatment differs between the floor 1e-10 score and C in {tot['top_changed']}/"
+          f"{tot['n_rankings']} combinations; the model trained with floor 1e-10 is first by the floor score in "
+          f"{tot['own_floor_first']}/{tot['n_rankings']}.**"]
+    return L, dict(tot, by_K=by_k)
+
+
 def run_report(experiment, run, audit_path=None, base=None):
     audit = audit_rows(audit_path)
     run = Path(run)
@@ -1329,6 +1376,13 @@ def run_report(experiment, run, audit_path=None, base=None):
         L, s = report_component_bounds(run, bases)
     elif experiment == "density_heads":
         L, s = report_density_heads(run, bases, audit)
+    elif experiment == "rank_change_seeds":
+        L, s = report_rank_change_seeds(run, bases, audit)
+    elif experiment == "wider_encoders":
+        L, s = report_real(run, "Rankings of training treatments with wider encoders", X.WIDE_ARMS, audit,
+                           floor="floor_1e-10")
+    elif experiment == "mixture_components":
+        L, s = report_mixture_components(run, audit)
     elif experiment == "floor_convention":
         raise SystemExit("floor_convention is reported by scripts/rescore_trained.py score/report (see README)")
     else:
@@ -1345,8 +1399,8 @@ def main(argv=None):
     ap.add_argument("--audit", default=None)
     ap.add_argument("--base", nargs="*", default=None,
                     help="further run directories: delta_misspecification (the synthetic run); triangular_* (the runs whose "
-                         "latent_scores.jsonl and result.json hold the other treatments); component_bounds and density_heads (the "
-                         "rank_change run)")
+                         "latent_scores.jsonl and result.json hold the other treatments); component_bounds, density_heads and "
+                         "rank_change_seeds (the rank_change run)")
     a = ap.parse_args(argv)
     L, _ = run_report(a.experiment, a.run, a.audit, a.base)
     print("\n".join(L))

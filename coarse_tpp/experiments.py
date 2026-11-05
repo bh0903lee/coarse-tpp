@@ -40,6 +40,12 @@ Experiments (paper section in brackets):
   density_heads           Weibull-mixture and spline-flow heads (K = 8), GRU, five tied data sets, four
                           treatments; the log-normal mixture counterparts are the rank_change run
                           (Table S7)                                                                  [5.3, S4]
+  rank_change_seeds       rank_change with seeds 5-9; reported together with the rank_change run (seeds
+                          0-4)                                                                        [5.3, 6.2, S4]
+  wider_encoders          GRU of width 128 and Transformer of width 128 with four layers, five tied data sets,
+                          four treatments                                                             [5.3, 8, S4]
+  mixture_components      mixture head with K in {1, 2, 4, 8, 16} components, GRU, five tied data sets, four
+                          treatments                                                                  [5.3, S4]
 """
 from __future__ import annotations
 
@@ -151,6 +157,14 @@ BOUNDS = {"sigmin2": dict(sigma_min=SIGMA_MIN), "mumin1e-4": dict(mu_min=MU_MIN)
 HEADS_DATASETS = ("conttime_q10", "conttime_q02", "email_eu", "retweet", "volcano")
 HEADS_ARMS = ("floor_1e-10", "floor_1e-6", "jitter_gap", "interval")
 DENSITY_HEADS = ("weib", "flow")
+
+# robustness checks of rank_change (Online Resource 1, Section S4, "Seeds, encoder width and number of components")
+RANK_EXTRA_SEEDS = (5, 6, 7, 8, 9)
+WIDE_DATASETS = ("email_eu", "volcano", "conttime_q02", "conttime_q10", "retweet_sub")
+WIDE_ARMS = ("floor_1e-10", "jitter_gap", "point_mass", "interval")
+GRU_WIDE = {"type": "gru", "d_model": 128}
+TRF_WIDE = {"type": "transformer", "d_model": 128, "n_layers": 4, "n_heads": 4, "d_ff": 256, "dropout": 0.0}
+MIX_K = (1, 2, 4, 8, 16)
 
 # triangular kernel on coarsened and recorded data (Online Resource 1, Section S4, "Smoothing objectives")
 TRI_IW_S = (1, 16, 64)
@@ -391,6 +405,18 @@ def cells_density_heads(run, audit):
     return _real("density_heads", run, audit, HEADS_DATASETS, HEADS_ARMS, heads=DENSITY_HEADS)
 
 
+def cells_rank_change_seeds(run, audit):
+    return _real("rank_change_seeds", run, audit, RANK_DATASETS, RANK_ARMS, (GRU, TRF), seeds=RANK_EXTRA_SEEDS)
+
+
+def cells_wider_encoders(run, audit):
+    return _real("wider_encoders", run, audit, WIDE_DATASETS, WIDE_ARMS, (GRU_WIDE, TRF_WIDE))
+
+
+def cells_mixture_components(run, audit):
+    return [c for k in MIX_K for c in _real("mixture_components", run, audit, TIED_REAL, WIDE_ARMS, K=k)]
+
+
 BUILDERS = {"synthetic": cells_synthetic, "rank_change": cells_rank_change, "intensity_heads": cells_intensity_heads,
             "process_logs": cells_process_logs, "delta_misspecification": cells_delta_misspecification,
             "iw_jitter": cells_iw_jitter, "iw_jitter_large": cells_iw_jitter_large,
@@ -399,7 +425,9 @@ BUILDERS = {"synthetic": cells_synthetic, "rank_change": cells_rank_change, "int
             "new_datasets": cells_new_datasets, "floor_convention": cells_floor_convention,
             "component_bounds": cells_component_bounds, "triangular_coarsened": cells_triangular_coarsened,
             "triangular_jitter": cells_triangular_jitter, "coarsened_more": cells_coarsened_more,
-            "triangular_recorded": cells_triangular_recorded, "density_heads": cells_density_heads}
+            "triangular_recorded": cells_triangular_recorded, "density_heads": cells_density_heads,
+            "rank_change_seeds": cells_rank_change_seeds, "wider_encoders": cells_wider_encoders,
+            "mixture_components": cells_mixture_components}
 NEEDS_AUDIT = set(BUILDERS) - {"synthetic", "iw_jitter_large", "floor_convention"}
 
 

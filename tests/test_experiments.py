@@ -30,7 +30,8 @@ def test_grid_sizes(tmp_path, audit):
             "resplit": 8 * 5 * 2 * 5, "new_datasets": 3 * 5 * 2 * 5, "floor_convention": 21 * 2 * 2 * 10,
             "component_bounds": 3 * 3 * 5 * 2 * 5, "triangular_coarsened": 12 * 2 * 2 * 5,
             "triangular_jitter": 6 * 2 * 3 * 2 * 5 + main * 5 * 3 * 2 * 2, "coarsened_more": 6 * 2 * 7 * 2 * 5,
-            "triangular_recorded": 9 * 2 * 2 * 5 + 7 * 2 * 2 * 5}
+            "triangular_recorded": 9 * 2 * 2 * 5 + 7 * 2 * 2 * 5, "rank_change_seeds": 9 * 8 * 2 * 2 * 5,
+            "wider_encoders": 5 * 4 * 2 * 2 * 5, "mixture_components": 5 * 5 * 4 * 2 * 5}
     for exp, k in want.items():
         assert n(exp, tmp_path, audit) == k, exp
     syn = [c for c in X.cells_synthetic(tmp_path) if c["arm"] == "triangular"]
@@ -47,6 +48,33 @@ def test_grid_sizes(tmp_path, audit):
                                 "coarsened_earthquake_r1", "coarsened_taobao_r0p3", "coarsened_taobao_r1")
     tr = X.cells_triangular_recorded(tmp_path, X.audit_table(audit))
     assert all(c["encoder"].get("marks", False) == c["dataset"].startswith("bpi_") for c in tr)
+
+
+def test_robustness_grids(tmp_path, audit):
+    a = X.audit_table(audit)
+    base, seeds = X.cells_rank_change(tmp_path, a), X.cells_rank_change_seeds(tmp_path, a)
+    assert len(base) + len(seeds) == 2880 and {c["seed"] for c in seeds} == {5, 6, 7, 8, 9}
+    key = lambda c: (c["dataset"], c["arm"], c["encoder"]["type"], c["lr_tag"])
+    assert {key(c) for c in seeds} == {key(c) for c in base}
+    assert all({k: v for k, v in c.items() if k not in ("cell_id", "experiment", "seed", "out_dir")}
+               == {k: v for k, v in b.items() if k not in ("cell_id", "experiment", "seed", "out_dir")}
+               for c, b in zip(seeds, base))
+    wide, mix = X.cells_wider_encoders(tmp_path, a), X.cells_mixture_components(tmp_path, a)
+    ids = [c["cell_id"] for c in base + seeds + wide + mix]
+    assert len(ids) == len(set(ids)) == 1440 * 2 + 400 + 1000
+    for cs in (wide, mix):
+        assert {c["arm"] for c in cs} == {"floor_1e-10", "jitter_gap", "point_mass", "interval"}
+        assert {c["seed"] for c in cs} == set(X.REAL_SEEDS) and {c["lr_tag"] for c in cs} == set(X.LRS)
+        assert all(c["head"] == "mix" and c["optim"]["max_epochs"] == 400 for c in cs)
+    assert {c["dataset"] for c in wide} == {"email_eu", "volcano", "conttime_q02", "conttime_q10", "retweet_sub"}
+    assert {json.dumps(c["encoder"], sort_keys=True) for c in wide} == {
+        json.dumps({"type": "gru", "d_model": 128}, sort_keys=True),
+        json.dumps({"type": "transformer", "d_model": 128, "n_layers": 4, "n_heads": 4, "d_ff": 256, "dropout": 0.0},
+                   sort_keys=True)}
+    assert all(c["K"] == 8 for c in wide)
+    assert {c["dataset"] for c in mix} == {"email_eu", "volcano", "conttime_q10", "retweet_sub", "stackoverflow"}
+    assert all(c["encoder"] == X.GRU for c in mix) and sorted({c["K"] for c in mix}) == [1, 2, 4, 8, 16]
+    assert all(sum(c["K"] == k for c in mix) == 200 for k in X.MIX_K)
 
 
 def test_configs_and_immutability(tmp_path, audit):
