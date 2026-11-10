@@ -14,6 +14,10 @@
       give the law a `log_interval(a, b)` method. A cell of exact zero probability scores -inf. The floor score is
       the density at max(tau~, eps), the convention the interval score replaces; it is kept for comparison.
 
+  jitter_loglik(law, tau, delta) / point_mass_loglik(tie_term, log_density, tie, log1m_pi=None)
+      Per-event jitter score (E_u log f(tau~ + delta u), 32-node Gauss-Legendre) and point-mass score (probability of
+      the first cell at ties, density of the model's distribution at positive gaps); Online Resource 1, Section S5.
+
   summarize(ll, tie)
       Mean score over all events with the tie / non-tie split, the number of non-finite scores and the mean over
       the finite scores only (a diagnostic, not the score over all events).
@@ -150,6 +154,28 @@ def floor_loglik(law, tau, eps: float, tie_stored: float = TIE_STORED):
     g = torch.as_tensor(read_gaps(tau, tie_stored))
     ll = law.log_density(g.clamp(min=eps))
     return ll.detach().cpu().numpy().astype(np.float64), (g <= 0).cpu().numpy()
+
+
+def jitter_loglik(law, tau, delta: float, nodes: int = 32, tie_stored: float = TIE_STORED):
+    """Per-event jitter score E_u log f(tau~ + delta u), u ~ U(0, 1), by the `nodes`-point Gauss-Legendre rule on (0, 1),
+    for a law with `log_density` (torch; the model's density of the time since the last recorded event). By Jensen's
+    inequality it never exceeds the interval score minus log(delta), with equality when f is flat on the cell
+    (Proposition 1 of the paper). Returns (ll, tie) as numpy arrays."""
+    import torch
+    from .jitter_pm import jitter_loglik as _jit
+    _check_positive("delta", delta)
+    g = torch.as_tensor(read_gaps(tau, tie_stored))
+    return _jit(law, g, delta, nodes).detach().cpu().numpy().astype(np.float64), (g <= 0).cpu().numpy()
+
+
+def point_mass_loglik(tie_term, log_density, tie, log1m_pi=None):
+    """Per-event point-mass score at resolution delta: at a tie the log probability of the first cell (`tie_term`, the
+    tie term of the interval score; with an atom pi at zero, log(pi + (1 - pi) P(first cell))), at a positive gap the log
+    density of the model's distribution at the recorded gap, log_density (+ log(1 - pi) when the model has an atom).
+    Arrays of one shape; returns the per-event scores."""
+    tie_term, log_density, tie = (np.asarray(x, np.float64) for x in (tie_term, log_density, tie))
+    pos = log_density + (0.0 if log1m_pi is None else np.asarray(log1m_pi, np.float64))
+    return np.where(tie.astype(bool), tie_term, pos)
 
 
 def summarize(ll, tie) -> dict[str, Any]:

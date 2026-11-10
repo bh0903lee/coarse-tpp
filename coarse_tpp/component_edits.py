@@ -6,7 +6,7 @@ mixture component at the tie (Online Resource 1, Section S4, "Component location
 
 RUN_DIR is a rank_change run. Units: combinations (data set, encoder) whose stored test tie share is at least TIE_MIN.
 Treatments: the five scored on the same raw density, floor 1e-10 / 1e-6 / 1e-5, jitter_gap, interval; per (unit,
-treatment) the learning rate with the best dev-C mean over seeds (coarse_tpp.analysis.select_lr, the rule of Table 4);
+treatment) the learning rate with the best dev-C mean over seeds (coarse_tpp.analysis.select_lr, the rule of Table 5);
 checkpoint best_C.pt. Work item = (unit, seed). For every model the per-event mixture (log_w, mu, log_sigma) of the
 scored test targets is extracted with the masks of coarse_tpp.train.evaluate (tie = recorded zero gap).
 

@@ -1,14 +1,14 @@
-"""Bootstrap of the rankings of Table 4: how often the top treatment by the floor score (floor 1e-6) and by the
+"""Bootstrap of the rankings of Table 5: how often the top treatment by the floor score (floor 1e-6) and by the
 interval score C differ under resampling of test sequences and training seeds (Online Resource 1, Section S4, "Resampling",
 Table S6). Exploratory; no training and no re-scoring.
 
     python -m coarse_tpp.rank_bootstrap run RUN_DIR [--B 2000] [--out DIR]
     python -m coarse_tpp.rank_bootstrap check RUN_DIR       validity checks only, no outcome computed
 
-RUN_DIR is a rank_change run. Models: those of Table 4 (coarse_tpp.floor_grid.selected: dev-C learning rate,
+RUN_DIR is a rank_change run. Models: those of Table 5 (coarse_tpp.floor_grid.selected: dev-C learning rate,
 checkpoint best_C.pt, all eight treatments, seeds common to all treatments). Inputs: the per-sequence test sums
 perseq_C.npz that coarse_tpp.train writes for every cell (n = scored targets, C, floor_1e-6). A mean per-event score
-is (sum over sequences) / (number of scored targets), averaged over seeds, as in Table 4.
+is (sum over sequences) / (number of scored targets), averaged over seeds, as in Table 5.
 
 Validity per cell: sum(n) equals the stored test n_events, and sum(C) / n and sum(floor_1e-6) / n reproduce the stored
 test C and floor_1e-6 within CHECK_TOL; the scored-target counts per sequence are identical across the cells of a unit
@@ -152,7 +152,7 @@ def cmd_run(run, out, B=B_DEFAULT):
     (out / "boot.json").write_text(json.dumps(dict(B=B, seed=SEED, rows=rows, failed=failed, counts=cnt,
                                                    complete=not failed), indent=1))
     fq = lambda x: "undefined" if x is None or not np.isfinite(x) else f"{x:+.2f}"
-    L = ["# Bootstrap of the rankings of Table 4 (exploratory; no training)", "",
+    L = ["# Bootstrap of the rankings of Table 5 (exploratory; no training)", "",
          f"B = {B} draws (seed {SEED}); test sequences and seeds resampled; learning rate not re-selected.", "",
          "| data set | enc | ties | top by C | top by floor 1e-6 | p_diff | p_self | tau (full sample) | tau 2.5% / 50% / 97.5% |",
          "|---|---|---:|---|---|---:|---:|---:|---|"]

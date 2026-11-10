@@ -6,7 +6,7 @@
 
 RUN_DIR is a rank_change run. Models: all eight treatments of every (data set, encoder) of the mixture head (K = 8),
 the learning rate of each (unit, treatment) chosen by the dev-C mean over seeds (coarse_tpp.analysis.select_lr, the
-rule of Table 4), checkpoint best_C.pt, the seeds common to all treatments. These are the models of Table 4.
+rule of Table 5), checkpoint best_C.pt, the seeds common to all treatments. These are the models of Table 5.
 Work item = (unit, seed).
 
 Floor score at floor eps: mean over the scored test targets of log q(max(tau~, eps)) on the raw model density, as
@@ -25,7 +25,7 @@ Report (OUT/report.md, OUT/curves.csv, OUT/summary.json), per unit, on seed mean
   (b) share of grid floors whose top treatment is the top by C
   (c) share of grid floors whose top treatment is the model trained with the nearest training floor (log distance)
   (d) min / median / max over the grid of Kendall's tau between the floor ranking and the C ranking
-  check: the top at eps = 1e-6 equals the top by the stored test floor_1e-6 (Table 4)
+  check: the top at eps = 1e-6 equals the top by the stored test floor_1e-6 (Table 5)
 and the structure quoted in Online Resource 1, Section S4: whether each floor-trained model is first at its own training floor,
 the grid floors other than the three at which a floor-trained model is first, the deficit of the model trained with
 1e-6 behind the top treatment a quarter decade on either side of 1e-6, and the largest spread of the eight treatments
@@ -269,9 +269,9 @@ def cmd_report(run, out):
     sel = selected(run)
     L = ["# Floor score on a continuous grid of floors (exploratory; no training)", "",
          f"Grid: {len(GRID)} floors from {GRID[0]:.0e} to {GRID[-1]:.0e}, 0.25 decade apart. Seed means of the floor "
-         "score of the Table 4 models; C from the stored results.", "",
+         "score of the Table 5 models; C from the stored results.", "",
          "| data set | enc | ties | seeds | quarantined | changes (a) | share top = top C (b) | share top = nearest trained (c) "
-         "| tau min / median / max (d) | top at 1e-6 = Table 4 |", "|---|---|---:|---:|---:|---:|---:|---:|---|---|"]
+         "| tau min / median / max (d) | top at 1e-6 = Table 5 |", "|---|---|---:|---:|---:|---:|---:|---:|---|---|"]
     rows, curve_rows, missing = [], [], []
     for u in sorted(sel):
         try:
@@ -298,7 +298,7 @@ def cmd_report(run, out):
         S, met = unit_curve([r["models"] for r in good], c_means)
         same = met["top_at_1e6"] == top(f6_stored)
         if not same:
-            missing.append(f"{u[0]}/{u[1]}: the top at 1e-6 does not reproduce Table 4")
+            missing.append(f"{u[0]}/{u[1]}: the top at 1e-6 does not reproduce Table 5")
             L.append(f"| {u[0]} | {u[1]} | {ts:.1%} | {len(good)} | {n_q} | pending | | | | NO |")
             continue
         L.append(f"| {u[0]} | {u[1]} | {ts:.1%} | {len(good)} | {n_q} | {met['changes']} | {met['share_top_eq_c']:.2f} | "

@@ -20,5 +20,15 @@ and each patch is marked "Patch" in the source. The files in
 third_party/easy_tpp_train are not covered by the MIT License of this
 repository (LICENSE).
 
+Parts of the state-space layers of S2P2 in third_party/easy_tpp_train/easy_tpp/ssm
+are taken or modified from S5 (https://github.com/lindermanlab/S5), as stated in
+the source: discretize_zoh and apply_ssm in ssm/ssm_util.py (S5 commit
+3c18fdb6b06414da35e77b94b9cd855f6a95ef17, s5/ssm.py), init_VinvB in
+ssm/initializers.py (S5 commit 52cc7e22d6963459ad99a8674e4d3cfb0a480008,
+s5/ssm.py), and the initialization of C and the "half_glu" activation in
+ssm/models.py, which cite the same S5 files. S5 is distributed under the MIT
+License, Copyright (c) 2022 Linderman Lab; its copyright and permission notice,
+identical at both commits, is reproduced in third_party/easy_tpp_train/LICENSE_S5.
+
 The data sets are not distributed with this repository, except the simulated data sets in
 `data/synthetic_extra/` (MIT License); the sources and terms of the others are listed in `data/README.md`.

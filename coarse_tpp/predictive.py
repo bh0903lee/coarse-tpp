@@ -4,7 +4,7 @@
     python -m coarse_tpp.predictive report RUN_DIR [--audit results/audit/audit.json]
 
 score: for every unit (data set, encoder, head, K, treatment) of RUN_DIR at its learning rate chosen by the dev mean
-of C (coarse_tpp.analysis.select_lr, as in Table 4), the checkpoint best_C.pt is loaded into the rebuilt model
+of C (coarse_tpp.analysis.select_lr, as in Table 5), the checkpoint best_C.pt is loaded into the rebuilt model
 (coarse_tpp.models.build with coarse_tpp.data.coarse_stats of the train split, as in coarse_tpp.train.run) and
 evaluated on the test split. The model's law q (and tie probability pi of the point-mass model) is converted by the
 treatment's readout (coarse_tpp.readout) into the law q_B of the waiting time s = t_i - t~_{i-1}, with distribution

@@ -1254,7 +1254,7 @@ def report_density_heads(run, bases=(), audit=None):
     log-normal mixture of the rank_change run (pass it with --base) on the same data sets and treatments (GRU).
     Per (data set, head), with the learning rate per treatment chosen by the dev-C mean over seeds:
       floor range   max - min over the floors 1e-10, 1e-6, 1e-5 of the mean test floor score of the model trained with
-                    floor 1e-6 (the same model under three floors, as in Table 3)
+                    floor 1e-6 (the same model under three floors, as in Table 4)
       self          the floor 1e-6 score ranks that model first among the four treatments (margin over the second)
       changed       the top treatment by the floor 1e-6 score differs from the top treatment by C"""
     audit = audit or {}

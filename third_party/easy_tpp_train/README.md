@@ -15,5 +15,9 @@ switches between them (`activate`).
 - `LICENCE`, `NOTICE`, `easy_tpp_version.py` (`version.py` in the source repository) and 39 files of `easy_tpp/` are
   unmodified copies; their SHA-256 sums are in `SOURCE_SHA256.txt` (check with `sha256sum -c SOURCE_SHA256.txt` in
   this directory).
+- `LICENSE_S5` is the MIT License of S5 (https://github.com/lindermanlab/S5, Copyright (c) 2022 Linderman Lab), identical
+  at the commits `3c18fdb` and `52cc7e2` cited in `easy_tpp/ssm/ssm_util.py` and `easy_tpp/ssm/initializers.py`; parts
+  of `easy_tpp/ssm/` are taken or modified from S5 (see `THIRD_PARTY_NOTICES.md` of the repository). It is not a file of
+  the S2P2 source and is not listed in `SOURCE_SHA256.txt`.
 - 16 files carry the patches listed in `PATCHES.md` (marked `Patch` in the source), with the SHA-256 of the source
   file and of the patched file. None of the patches changes a forward computation of a model.
