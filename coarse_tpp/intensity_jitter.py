@@ -1,5 +1,5 @@
-"""Jitter and point-mass scores of the retrained EasyTPP models (Online Resource 1, Section S5 and the lower part of
-Table S4). No training: the checkpoints of coarse_tpp.easytpp_train (or of the trained-models archive) are re-scored.
+"""Jitter and point-mass scores of the retrained EasyTPP models (Online Resource 1, Section S4 and the lower part of
+Table S5). No training: the checkpoints of coarse_tpp.easytpp_train (or of the trained-models archive) are re-scored.
 
     python -m coarse_tpp.intensity_jitter score  --experiment {time_only,further} --ckpt RUNS --data PREPARED \
                                                  --scores RESCORE_OUT --out OUT [--datasets ..] [--models ..] [--seeds ..] [--cpu]
@@ -362,7 +362,7 @@ def section(scores_dirs, jitter_dirs, exceedance=None, repro_dirs=()):
 def summarize(cells, exceedance=None):
     """section() on loaded cells (dicts with experiment, dataset, model, seed, status, quarantined and dev / test split
     means carrying floor_1e-6, interval, point_mass, jitter, n, n_tie)."""
-    L = ["## Retrained EasyTPP models: choice of architecture by each score (Online Resource 1, Table S4, lower part)", "",
+    L = ["## Retrained EasyTPP models: choice of architecture by each score (Online Resource 1, Table S5, lower part)", "",
          "Architecture with the highest validation seed mean among the eight (time_only: finite on all five seeds; further: "
          "valid runs). S2P2 - NHP: test seed-paired mean difference (nats per event), in brackets the number of seeds on "
          "which S2P2 is higher. Point mass: interval tie term on ties, density at the recorded gap otherwise. Jitter: "

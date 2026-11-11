@@ -1,5 +1,5 @@
-"""Scoring, reproduction check and reports of the retrained EasyTPP models (Section 5.2; Online Resource 1, Tables S2-S4 and
-the S2P2 - NHP differences of Fig. 2). Models: coarse_tpp.easytpp_train (experiments time_only, joint, further).
+"""Scoring, reproduction check and reports of the retrained EasyTPP models (Section 5.2; Online Resource 1, Tables S3-S5 and
+the S2P2 - NHP differences of Fig. 4). Models: coarse_tpp.easytpp_train (experiments time_only, joint, further).
 Scores: coarse_tpp.intensity_eval (floors, interval score; joint scores of time and mark for `joint`).
 
     python -m coarse_tpp.rescore_retrained score  --experiment time_only --ckpt RUNS --data PREPARED --out OUT [--audit A]
@@ -29,7 +29,7 @@ of that mean on both splits, for the score in the training objective's terms: th
 score otherwise, at eps = 1e-5 for IntensityFree (its training clamps gaps at 1e-5), 1e-6 where ties are stored as
 1e-6, 1e-10 on BPIC12 (ties stored as 1e-7 h). A run without a passing check is quarantined. EasyTPP's Monte Carlo
 draws come from the device's generator, so the reference differs slightly between devices (within its standard error).
-The time-only five-seed table (Table S2) uses every run with a checkpoint, as in the paper; its report gives the check
+The time-only five-seed table (Table S3) uses every run with a checkpoint, as in the paper; its report gives the check
 against the single estimate logged at training time for information.
 Reproduction references are bound to the experiment, objective key, repeat count and checkpoint, configuration,
 training record and data hashes. References without that provenance must be regenerated with `repro`.
@@ -528,7 +528,7 @@ def tie_share(cells, ds):
 
 
 def seed42_inside(cells, csv_path):
-    """Seed-42 models of Online Resource 1, Table S1 (trained-models archive, intensity_models/scores.csv): whether their test
+    """Seed-42 models of Online Resource 1, Table S2 (trained-models archive, intensity_models/scores.csv): whether their test
     floor 1e-6 score lies within the range of the five retrained seeds (all runs with a checkpoint)."""
     import csv
     rows = {}
@@ -546,7 +546,7 @@ def seed42_inside(cells, csv_path):
 
 def report_time_only(cells, out, seed42=None):
     keys = ("floor_1e-10", F6, "floor_1e-5", IV)
-    L = ["# Retrained EasyTPP models, time-only objective, seeds 0-4 (Online Resource 1, Table S2)", "",
+    L = ["# Retrained EasyTPP models, time-only objective, seeds 0-4 (Online Resource 1, Table S3)", "",
          "Test split, mean per target event (nats). Mean ± SD over the runs with a checkpoint that did not diverge "
          "(test floor 1e-6 score below -100 or non-finite); * = every run diverged, mean over the diverged runs. "
          "Orders and Kendall's tau use these means.", ""] + problems_lines(cells)
@@ -578,7 +578,7 @@ def report_time_only(cells, out, seed42=None):
     if seed42:
         ins = seed42_inside(cells, seed42)
         summ["seed42_inside"] = ins
-        L += ["## Seed-42 models (Online Resource 1, Table S1) within the range of the five seeds (test floor 1e-6)", "",
+        L += ["## Seed-42 models (Online Resource 1, Table S2) within the range of the five seeds (test floor 1e-6)", "",
               f"{sum(v['inside'] for v in ins.values())} of {len(ins)}: "
               + ", ".join(f"{k} {'inside' if v['inside'] else 'outside'} ({v['seed42']:+.3f} vs {v['min']:+.3f}..{v['max']:+.3f})"
                           for k, v in ins.items()), ""]
@@ -588,7 +588,7 @@ def report_time_only(cells, out, seed42=None):
 def report_joint(cells, out):
     ds = "retweet_sub"
     keys = (F6, IV, "mark_rec", f"joint_{F6}", f"joint_{IV}", f"joint_{IV}2")
-    L = ["# Retrained EasyTPP models with the mark term, Retweet subsample (Online Resource 1, Table S3)", "",
+    L = ["# Retrained EasyTPP models with the mark term, Retweet subsample (Online Resource 1, Table S4)", "",
          "Test split, mean per target event (nats); mean ± SD over the runs used (reproduction check passed, not "
          "quarantined) that did not diverge. joint floor 1e-6 = floor score plus the mark log-likelihood at the floored "
          "gap; joint interval = log-probability of the recorded cell and mark; mark_rec = mark log-likelihood at the "
@@ -614,7 +614,7 @@ def report_joint(cells, out):
 
 def report_further(cells, out):
     keys = ("floor_1e-10", F6, "floor_1e-5", IV)
-    L = ["# Retrained EasyTPP models on Volcano, Sepsis and BPIC12, time-only objective (Online Resource 1, Table S4)", "",
+    L = ["# Retrained EasyTPP models on Volcano, Sepsis and BPIC12, time-only objective (Online Resource 1, Table S5)", "",
          "Test split, mean per target event (nats); mean ± SD over the runs used (reproduction check passed, not "
          "quarantined) that did not diverge.", ""] + problems_lines(cells)
     summ = {}

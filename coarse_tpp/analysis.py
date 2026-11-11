@@ -4,7 +4,7 @@
 
 writes RUN_DIR/report.md and RUN_DIR/summary.json.
 
-Common rules (Section 6 and S2): cells with status ok are used (ok_walltime and failed cells are excluded), and
+Common rules (Section 6 and S1): cells with status ok are used (ok_walltime and failed cells are excluded), and
 within a group (data set, encoder, head, K) only the seeds whose cells exist for every (treatment, learning rate)
 of the grid. Within a unit (group, treatment) the learning rate is chosen by the dev mean over seeds of the
 selection criterion (dev C unless stated), and the test values at that learning rate are used. Differences are
@@ -890,7 +890,7 @@ def report_coarsened(run, audit, latent=None, datasets=X.COARSENED, arms=X.COARS
     return L, summ
 
 
-# ------------------------------------------------------------------ triangular kernel (Online Resource 1, Section S4)
+# ------------------------------------------------------------------ triangular kernel (Online Resource 1, Section S3)
 TRI_BASE = ("floor_1e-10", "floor_1e-6", "jitter_gap", "jitter_time", "point_mass", "interval")
 BETTER_MEAN, LOSS_C = 0.01, -0.005
 PENDING = "pending"
@@ -1055,12 +1055,12 @@ def triangular_c_table(runs, seeds=X.REAL_SEEDS):
 def report_triangular(run, bases=(), seeds=X.REAL_SEEDS):
     """Triangular-kernel objective against the other treatments on the latent-time score B (coarsened data, both
     readouts, from the latent_scores.jsonl files of `run` and `bases`), on B of the synthetic settings, and on C of the
-    recorded data (result.json of the runs). The decision rule was fixed before the runs (Online Resource 1, Section S4)."""
+    recorded data (result.json of the runs). The decision rule was fixed before the runs (Online Resource 1, Section S3)."""
     runs = [Path(run)] + [Path(b) for b in bases]
     cells, stale = latent_rows([r / "latent_scores.jsonl" for r in runs], with_stale=True)
     tri_units = grid_units(runs, keep=lambda ds: ds.startswith("coarsened_"))      # planned, not merely scored
     L = ["# Triangular-kernel likelihood against the other treatments", "",
-         "Exploratory comparison (Online Resource 1, Section S4). B = log q_B(s) of the latent time since the last record, on the test "
+         "Exploratory comparison (Online Resource 1, Section S3). B = log q_B(s) of the latent time since the last record, on the test "
          "split; learning rate per unit by dev C on the common seed set; real units seed-paired, synthetic settings paired "
          "over realizations. better = one-sided 95% lower bound > 0 and mean >= 0.01 nats. jitter_time shares the smoothed "
          "readout but also jitters the inputs; iw_jitter_triangular keeps the recorded inputs.",
@@ -1134,7 +1134,7 @@ def report_triangular(run, bases=(), seeds=X.REAL_SEEDS):
     return L, summary
 
 
-# ------------------------------------------------------------------ component bounds (Online Resource 1, Section S4)
+# ------------------------------------------------------------------ component bounds (Online Resource 1, Section S3)
 BOUND_ARMS = ("none",) + tuple(X.BOUNDS)
 FLOOR_KEYS = tuple(X.FLOOR_ARMS)
 
@@ -1160,7 +1160,7 @@ def report_component_bounds(run, bases=(), seeds=X.REAL_SEEDS):
                 cells[(c["dataset"], "gru", x["arm"], c["lr_tag"], x["seed"])] = x
     datasets = sorted({ds for (ds, enc, a, lr, s) in cells if a in {X.bounds_tag(t, b) for t in X.BOUNDS_ARMS for b in X.BOUNDS}})
     L = ["# Component bounds: width / location intervention on the floor's self-preference", "",
-         "Exploratory (Online Resource 1, Section S4). Learning rate per (bound, treatment) by dev C on the seed set common to all arms and "
+         "Exploratory (Online Resource 1, Section S3). Learning rate per (bound, treatment) by dev C on the seed set common to all arms and "
          "treatments of the data set; seed means. Margin at a floor = test floor score of the model trained with that floor "
          "minus the best of the other four same-density treatments (nats per event; tie + non-tie contributions per scored "
          "event). The unbounded arm is the rank_change run (pass it with --base).", ""]
@@ -1254,7 +1254,7 @@ def report_density_heads(run, bases=(), audit=None):
     log-normal mixture of the rank_change run (pass it with --base) on the same data sets and treatments (GRU).
     Per (data set, head), with the learning rate per treatment chosen by the dev-C mean over seeds:
       floor range   max - min over the floors 1e-10, 1e-6, 1e-5 of the mean test floor score of the model trained with
-                    floor 1e-6 (the same model under three floors, as in Table 4)
+                    floor 1e-6 (the same model under three floors, as in Fig. 3)
       self          the floor 1e-6 score ranks that model first among the four treatments (margin over the second)
       changed       the top treatment by the floor 1e-6 score differs from the top treatment by C"""
     audit = audit or {}
@@ -1313,7 +1313,7 @@ def report_density_heads(run, bases=(), audit=None):
     return L, dict(rows=rows, heads=agg)
 
 
-# ------------------------------------------------------------------ robustness checks of rank_change (Section S4)
+# ------------------------------------------------------------------ robustness checks of rank_change (Section S3)
 ROBUST_KEYS = ("n_rankings", "top_changed", "n_tied", "top_changed_tied", "own_floor_first", "own_floor_first_tied",
                "changed_tied_rank_last3", "changed_tied_rank_last", "n_better", "n_family")
 

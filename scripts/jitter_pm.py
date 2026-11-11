@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Jitter and point-mass scores of trained models and the analyses of Online Resource 1, Section S5
+"""Jitter and point-mass scores of trained models and the analyses of Online Resource 1, Section S4
 (see coarse_tpp.jitter_pm)."""
 import _bootstrap  # noqa: F401
 from coarse_tpp.jitter_pm import main

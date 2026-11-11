@@ -1,4 +1,4 @@
-"""Jitter and point-mass scores (Online Resource 1, Section S5): analytic checks of the per-event scores, the pure
+"""Jitter and point-mass scores (Online Resource 1, Section S4): analytic checks of the per-event scores, the pure
 analysis functions, and a tiny end-to-end run on CPU."""
 import json
 import math

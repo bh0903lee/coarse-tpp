@@ -1,4 +1,4 @@
-"""Ranking bootstrap (Online Resource 1, Section S4, Table S6): resampling arithmetic, validity checks, and a tiny end-to-end run."""
+"""Ranking bootstrap (Online Resource 1, Section S3, Fig. S2): resampling arithmetic, validity checks, and a tiny end-to-end run."""
 import json
 import math
 

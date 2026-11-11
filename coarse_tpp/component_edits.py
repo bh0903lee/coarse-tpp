@@ -1,12 +1,12 @@
 """Component edits: decomposition of the floor's self-preference margin into the location and the scale of the
-mixture component at the tie (Online Resource 1, Section S4, "Component location and scale", Table S8). No training.
+mixture component at the tie (Online Resource 1, Section S3, "Component location and scale", Table S8). No training.
 
     python -m coarse_tpp.component_edits score RUN_DIR [--shard i/n] [--limit N] [--cpu] [--force] [--retry-quarantined]
     python -m coarse_tpp.component_edits report RUN_DIR
 
 RUN_DIR is a rank_change run. Units: combinations (data set, encoder) whose stored test tie share is at least TIE_MIN.
 Treatments: the five scored on the same raw density, floor 1e-10 / 1e-6 / 1e-5, jitter_gap, interval; per (unit,
-treatment) the learning rate with the best dev-C mean over seeds (coarse_tpp.analysis.select_lr, the rule of Table 5);
+treatment) the learning rate with the best dev-C mean over seeds (coarse_tpp.analysis.select_lr, the rule of Table 4);
 checkpoint best_C.pt. Work item = (unit, seed). For every model the per-event mixture (log_w, mu, log_sigma) of the
 scored test targets is extracted with the masks of coarse_tpp.train.evaluate (tie = recorded zero gap).
 
@@ -434,7 +434,7 @@ def cmd_report(run, out):
     allrecs = [r for v in recs.values() for r in v]
     maxdiff = max((m["abs_diff"] for r in allrecs for m in r["models"].values()), default=float("nan"))
     L = ["# Component edits: location and scale of the component at the tie (no training)", "",
-         "Exploratory diagnostic of saved checkpoints on test events (Online Resource 1, Section S4), not a correction.", "",
+         "Exploratory diagnostic of saved checkpoints on test events (Online Resource 1, Section S3), not a correction.", "",
          f"Units (test tie share >= {TIE_MIN:.0%}): " + ", ".join(f"{d}/{e}" for d, e in units) + ".",
          f"Work items scored: {len(allrecs)}/{len(expected)}; missing {len(missing)}; stale {len(stale)} (cached for other models "
          f"or checkpoints than the current selection; re-run score); quarantined {len(quar)} "

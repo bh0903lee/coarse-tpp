@@ -1,4 +1,4 @@
-"""Threshold-exceedance forecasts of the retrained EasyTPP models (time-only experiment; Section S4, paragraph on
+"""Threshold-exceedance forecasts of the retrained EasyTPP models (time-only experiment; Section S3, paragraph on
 threshold-exceedance forecasts, last part): the architecture a practitioner would pick by the floor score and by the
 interval score, compared by the Brier loss of P(next event not recorded within h). No training.
 

@@ -1,6 +1,6 @@
-"""Jitter and point-mass scores of trained models and the analyses of Online Resource 1, Section S5 ("Jitter and
-point-mass scores"): the jitter and point-mass rows of Table 6 and the jitter / point-mass columns of Tables S4-S8,
-S11 and S13. No training; the saved checkpoints (best_C.pt) are re-scored.
+"""Jitter and point-mass scores of trained models and the analyses of Online Resource 1, Section S4 ("Jitter and
+point-mass scores"): the jitter and point-mass rows of Table 5 and the jitter / point-mass columns of Tables S5-S7, S11
+and S13 and of Fig. S2. No training; the saved checkpoints (best_C.pt) are re-scored.
 
     python -m coarse_tpp.jitter_pm score RUN_DIR [--shard i/n] [--cpu] [--threads N] [--arms ARM ...] [--only CELL ...]
                                      [--limit N] [--force] [--retry-quarantined]
@@ -42,18 +42,18 @@ of the tied rank_change combinations) scored by both scores; writes RUN_DIR/jitt
 report: each section needs the runs it names and is left out otherwise.
   Learning rate and checkpoint: per (combination, treatment) the learning rate with the best mean validation value
   of the score used (floor 1e-6 and C: as in the paper; jitter and point mass: their own validation means), except
-  for the comparison with the latent-time score B (Table 6) and the decomposition, where every score uses the
+  for the comparison with the latent-time score B (Table 5) and the decomposition, where every score uses the
   learning rate chosen by the validation C, and the predictive accuracy (the models scored by
   coarse_tpp.predictive are those at the validation-C learning rate). Deficit: test C of the interval score's top
   treatment minus test C of the score's top treatment (both at their validation-C learning rate); seeds: seeds on
   which that paired difference is positive; rank: rank of the score's top among the treatments by C. Self: the score
   ranks first the model trained with it (floor 1e-6: floor_1e-6, interval: interval, jitter: jitter_gap, point mass:
   point_mass). Tied combinations: tie share >= TIE_MIN (audit file when given, else the stored test tie share).
-  Sections: rankings (rank_change; Table S5 columns), bootstrap (Table S6 columns; the design of
+  Sections: rankings (rank_change; Table S6 columns), bootstrap (Fig. S2 columns; the design of
   coarse_tpp.rank_bootstrap), robustness checks (ten seeds, wider encoders, mixture components, density heads with
-  the Table S7 columns, new splits, further data sets, process logs), Table 6 (synthetic, coarsened_real,
+  the Table S7 columns, new splits, further data sets, process logs), Table 5 (synthetic, coarsened_real,
   coarsened_more), decomposition (KL_C; tie and positive-gap parts of the point-mass score; Table S8 edits),
-  intensity-based models (Table S4; coarse_tpp.intensity_jitter), threshold-exceedance Brier on the process logs
+  intensity-based models (Table S5; coarse_tpp.intensity_jitter), threshold-exceedance Brier on the process logs
   (Table S11; selection over treatment and learning rate by the validation mean of each score, the Brier files and
   bootstrap of coarse_tpp.alarms), and predictive accuracy (Table S13; the files of coarse_tpp.predictive).
 """
@@ -86,7 +86,7 @@ C_TOL = 1e-5
 FLOOR_TOL = 1e-4
 VERSION = 1
 TIE_MIN = 0.01
-WITHIN = 0.01                    # Table 6: first choice within this many nats of the best B
+WITHIN = 0.01                    # Table 5: first choice within this many nats of the best B
 P_MIN = 0.9                      # bootstrap shares counted in the summary
 BOOT_SEED, B_DEFAULT = 20261027, 2000
 KEYS = ("C", "floor_1e-6", "jitter", "point_mass")
@@ -478,7 +478,7 @@ def score_units(cells, value, arms, floor="floor_1e-6", group=unit_of):
             "point_mass": units(cells, value, "point_mass", "point_mass", arms, group)}
 
 
-# ------------------------------------------------------------------ bootstrap (Table S6 columns)
+# ------------------------------------------------------------------ bootstrap (Fig. S2 columns)
 def bootstrap_score(n, X_, C, self_arm, arms, B=B_DEFAULT, seed=BOOT_SEED):
     """Two-stage bootstrap of coarse_tpp.rank_bootstrap (same generator and draw order) for a score X_ against C:
     p_diff = share of draws whose tops differ, p_self = share whose top by X_ is `self_arm`."""
@@ -497,7 +497,7 @@ def bootstrap_score(n, X_, C, self_arm, arms, B=B_DEFAULT, seed=BOOT_SEED):
     return dict(p_diff=diff / B, p_self=selfp / B)
 
 
-# ------------------------------------------------------------------ Table 6 (pure)
+# ------------------------------------------------------------------ Table 5 (pure)
 T6_SCORES = ("floor_1e-10", "floor_1e-6", "floor_1e-5", "C", "jitter", "point_mass")
 
 
@@ -731,8 +731,8 @@ def section_rank_change(run, value, audit, B):
     tie_of = tie_fn(audit, cells)
     arms = RANK_ARMS
     U, rows, summ = ranking_block(cells, value, arms, tie_of)
-    L = ["## Rankings of the eight treatments (rank_change; Table S5 columns)", ""] + ranking_lines("Summary", summ, "floor_1e-6")
-    L += ["Combinations with tied data: top treatment, deficit, seeds and rank by the interval score (Table S5).", "",
+    L = ["## Rankings of the eight treatments (rank_change; Table S6 columns)", ""] + ranking_lines("Summary", summ, "floor_1e-6")
+    L += ["Combinations with tied data: top treatment, deficit, seeds and rank by the interval score (Table S6).", "",
           "| combination | ties | interval top | floor 1e-6 top | jitter top: deficit, seeds, rank | point-mass top: deficit, seeds, rank |",
           "|---|---:|---|---|---|---|"]
     by = {sc: {tuple(r["group"]): r for r in rows[sc]} for sc in rows}
@@ -743,8 +743,8 @@ def section_rank_change(run, value, audit, B):
             continue
         L.append(f"| {gname(g)} | {tie_of(g):.1%} | {by['C'][g]['top']} | {by['floor_1e-6'][g]['top']} | {cell(by['jitter'][g])} | "
                  f"{cell(by['point_mass'][g])} |")
-    # bootstrap (Table S6 columns)
-    L += ["", "### Bootstrap (Table S6 columns)", "",
+    # bootstrap (Fig. S2 columns)
+    L += ["", "### Bootstrap (Fig. S2 columns)", "",
           f"{B} two-stage draws (seed {BOOT_SEED}) of test sequences and seeds, the design of coarse_tpp.rank_bootstrap; "
           "p_diff: share of draws whose tops by the score and by C differ; p_self: share whose top by the score is the model "
           "trained with it. Learning rates as above; C from perseq_C.npz (the stored per-sequence sums).", "",
@@ -854,8 +854,8 @@ def section_robust(runs, value, audit, rank_change=None):
 
 
 def section_table6(runs, value, audit):
-    L = ["## Table 6 rows: rankings against the latent-time score B", "",
-         "Six treatments; every score at the learning rate chosen by the validation C (as in Table 6). Within: the "
+    L = ["## Table 5 rows: rankings against the latent-time score B", "",
+         "Six treatments; every score at the learning rate chosen by the validation C (as in Table 5). Within: the "
          f"score's first choice within {WITHIN} nats of the best B; self: the score ranks the model trained with it first; "
          "tau below C: settings where the score's tau is below the interval score's.", "",
          "| data (settings) | score | median tau | top as by B | within | mean deficit in B | self | tau below C |",
@@ -1033,7 +1033,7 @@ def cmd_report(a):
     runs = {k: getattr(a, k) for k in ("rank_change_seeds", "wider_encoders", "mixture_components", "density_heads", "resplit",
                                        "new_datasets", "process_logs", "synthetic", "coarsened_real", "coarsened_more")
             if getattr(a, k)}
-    L = ["# Jitter and point-mass scores (Online Resource 1, Section S5; no training)", "",
+    L = ["# Jitter and point-mass scores (Online Resource 1, Section S4; no training)", "",
          f"Jitter: {N_NODES}-node Gauss-Legendre E_u log q(tau~ + delta u); point mass: tie term of C at ties, density of the "
          "model's distribution at positive gaps (log(1 - pi) + log q for the point-mass treatment). Learning rates: floor 1e-6 "
          "and C by the validation C, jitter and point mass by their own validation means, unless a section states otherwise.", ""]

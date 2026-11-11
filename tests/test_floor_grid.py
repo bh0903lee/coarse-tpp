@@ -1,4 +1,4 @@
-"""Floor grid (Online Resource 1, Section S4, Fig. S3): pure functions, cache rules, and a tiny end-to-end run on CPU."""
+"""Floor grid (Online Resource 1, Section S3, Fig. S1): pure functions, cache rules, and a tiny end-to-end run on CPU."""
 import json
 import math
 from pathlib import Path

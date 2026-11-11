@@ -107,7 +107,7 @@ class MixtureHead(nn.Module):
       bounded_mean   log b_k = l_b + (u_b - l_b) sigmoid(v_k / c), sigma_k = sig_min + (sig_max - sig_min)
                      sigmoid(u_k), mu_k = log a + log b_k - sigma_k^2 / 2 with a = train median gap, so every
                      component mean lies in [b_lo, b_hi]
-    Lower bounds of the standard head (the component-bounds experiment, Online Resource 1, Section S4): ls_lo replaces the lower
+    Lower bounds of the standard head (the component-bounds experiment, Online Resource 1, Section S3): ls_lo replaces the lower
     end -5 of the log_scale clamp (sigma_k >= s e^ls_lo; the default -5 leaves the head unchanged) and mu_lo floors
     the raw log-time location (value clamped, gradient passed through). Both are defined for `standard` only.
     """

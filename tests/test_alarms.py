@@ -1,4 +1,4 @@
-"""SLA alarms (Online Resource 1, Section S4): distribution function against the cell probabilities, the h grid, selection rules,
+"""SLA alarms (Online Resource 1, Section S3): distribution function against the cell probabilities, the h grid, selection rules,
 the bootstrap, the rollout path model, and a tiny end-to-end run on CPU."""
 import json
 import math

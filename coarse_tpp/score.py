@@ -16,7 +16,7 @@
 
   jitter_loglik(law, tau, delta) / point_mass_loglik(tie_term, log_density, tie, log1m_pi=None)
       Per-event jitter score (E_u log f(tau~ + delta u), 32-node Gauss-Legendre) and point-mass score (probability of
-      the first cell at ties, density of the model's distribution at positive gaps); Online Resource 1, Section S5.
+      the first cell at ties, density of the model's distribution at positive gaps); Online Resource 1, Section S4.
 
   summarize(ll, tie)
       Mean score over all events with the tie / non-tie split, the number of non-finite scores and the mean over
